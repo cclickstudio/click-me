@@ -59,6 +59,17 @@ export default function Page() {
   // 서버 워커(APScheduler)가 자동으로 남긴 결과 — 탭 안 열려도 서버가 해둔 걸 읽어 표시.
   const [workerRuns, setWorkerRuns] = useState<AutomationRunItem[]>([]);
 
+  // 리밸런스 제안 알림 — 사용자 화면 CTA 대상(내부 점검 전체는 arch 카드에만).
+  const rebalanceRuns = workerRuns.filter((r) => r.suggested_action === 'apply_rebalance');
+  // 대시보드 CLIO 런처와 동일한 clio:draft 패턴(1회 소비) — 챗 페이지 무변경.
+  const draftRebalanceChat = () => {
+    try {
+      sessionStorage.setItem('clio:draft', '리밸런스 적용해줘');
+    } catch {
+      /* sessionStorage 불가 환경 — 초안 없이 /chat 진입 */
+    }
+  };
+
   const scanReal = useCallback(async () => {
     setScanBusy(true);
     try {
@@ -271,6 +282,21 @@ export default function Page() {
           )}
         </div>
 
+        {/* 리밸런스 제안 알림 — 사용자 화면에도 노출(적용 진입 CTA). 내부 점검 전체는 arch 카드. */}
+        {mode === 'user' && rebalanceRuns.length > 0 && (
+          <div className="mb-4 rounded-xl border border-line px-4 py-3">
+            <p className="text-sm font-semibold text-ink">예산 리밸런싱 제안이 도착했어요</p>
+            <p className="mt-0.5 text-[12px] text-ink-tertiary">{rebalanceRuns[0].body}</p>
+            <Link
+              href="/chat"
+              onClick={draftRebalanceChat}
+              className="mt-1 inline-block text-[12px] font-semibold text-primary hover:underline"
+            >
+              챗에서 리밸런스 적용하기 →
+            </Link>
+          </div>
+        )}
+
         {/* 서버 워커 자동 점검 결과 — 내부 운영 정보라 '내부 동작'(arch)에서만 노출 */}
         {mode === 'arch' && (
         <div className="mb-4 rounded-xl border border-line px-4 py-3">
@@ -301,6 +327,15 @@ export default function Page() {
                     )}
                   </p>
                   {r.body && <p className="text-[12px] text-ink-tertiary">{r.body}</p>}
+                  {r.suggested_action === 'apply_rebalance' && (
+                    <Link
+                      href="/chat"
+                      onClick={draftRebalanceChat}
+                      className="mt-1 inline-block text-[12px] font-semibold text-primary hover:underline"
+                    >
+                      챗에서 리밸런스 적용하기 →
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>

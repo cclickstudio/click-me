@@ -77,6 +77,7 @@ export const ACTION_LABELS: Record<string, string> = {
   CREATE_CAMPAIGN: "캠페인 재생성",
   EXPAND_AUDIENCE: "타겟 범위 확장",
   CHANGE_BID_STRATEGY: "입찰 전략 변경",
+  REBALANCE_BUDGET: "예산 리밸런싱",
 };
 
 export const actionLabel = (actionType: string): string => ACTION_LABELS[actionType] ?? actionType;

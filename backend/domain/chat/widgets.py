@@ -113,3 +113,14 @@ def replace_creative_form(campaign_id: str = "", campaign_name: str = "") -> dic
         },
         "source": DEEP_AGENT,
     }
+
+
+def rebalance_action(proposal: dict) -> dict:
+    """리밸런싱(transfer) 적용 확인 카드 — proposal=insights kind=transfer 제안 그대로.
+
+    from/to 2개 payload라 campaign_action(단일 캠페인)과 분리한다. source 고정.
+    """
+    return {
+        "widget": {"type": "rebalance_action", "data": {"proposal": proposal}},
+        "source": DEEP_AGENT,
+    }

@@ -2,7 +2,7 @@
 
 > 이 파일은 `backend/scripts/gen_docs.py`가 코드에서 **자동 생성**합니다. 직접 편집하지 말고 소스를 고친 뒤 스크립트를 다시 실행하세요(커밋 시 pre-commit 훅이 자동 갱신).
 
-총 **197개** 엔드포인트 · **18개** 그룹.
+총 **198개** 엔드포인트 · **18개** 그룹.
 
 ## admin
 
@@ -195,6 +195,7 @@
 | GET | `/api/management/audit` | get_audit |
 | GET | `/api/management/budget` | get_budget |
 | POST | `/api/management/budget/limit` | set_budget_limit |
+| POST | `/api/management/budget/rebalance-commit` | budget_rebalance_commit |
 | GET | `/api/management/budget/rebalance-proposal` | budget_rebalance_proposal |
 | GET | `/api/management/calibration/anchors` | calibration_anchors |
 | GET | `/api/management/campaign-policy` | campaign_policy |

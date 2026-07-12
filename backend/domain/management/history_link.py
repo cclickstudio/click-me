@@ -32,6 +32,7 @@ _ACTION_LABELS = {
     "CREATE_CAMPAIGN": "캠페인 생성",
     "EXPAND_AUDIENCE": "타깃 확장",
     "CHANGE_BID_STRATEGY": "입찰 전략 변경",
+    "REBALANCE_BUDGET": "예산 리밸런싱",
 }
 
 

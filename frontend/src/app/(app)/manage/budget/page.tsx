@@ -89,9 +89,8 @@ export default function Page() {
       .catch(() => {});
   }, []);
 
-  // 리밸런싱 적용 — 기존 budget-commit(검증·승인·감사) 재사용.
-  // 이전(transfer)은 두 캠페인에 순서대로(감액 먼저 해 총예산이 순간적으로도 늘지 않게).
-  // 단일 조정(adjust)은 그 캠페인 1건만 증액/감액.
+  // 리밸런싱 적용 — 이전(transfer)은 rebalance-commit 1건(원자·보상 포함),
+  // 단일 조정(adjust)은 budget-commit 1건.
   const applyRebalance = async () => {
     if (!rebalance) return;
     setRebalanceBusy(true);
@@ -110,23 +109,27 @@ export default function Page() {
             : '적용 완료 — 일예산을 감액했어요.',
         );
       } else {
-        // 캠페인 2개+ — 저효율 감액 먼저, 고효율 증액.
-        await api.management.budgetCommit(rebalance.from.campaign_id, {
-          action: 'decrease_budget',
-          new_daily_budget_krw: rebalance.from.after_krw,
-          shown_budget_before_krw: rebalance.from.daily_budget_krw,
+        // 캠페인 2개+ — 원자 리밸런스 1건(감액→증액→실패 시 보상은 백엔드 executor가 처리).
+        const r = await api.management.rebalanceCommit({
+          from_campaign_id: rebalance.from.campaign_id,
+          to_campaign_id: rebalance.to.campaign_id,
+          from_after_krw: rebalance.from.after_krw,
+          to_after_krw: rebalance.to.after_krw,
+          move_krw: rebalance.move_krw,
+          shown_from_before_krw: rebalance.from.daily_budget_krw,
+          shown_to_before_krw: rebalance.to.daily_budget_krw,
         });
-        await api.management.budgetCommit(rebalance.to.campaign_id, {
-          action: 'increase_budget',
-          new_daily_budget_krw: rebalance.to.after_krw,
-          shown_budget_before_krw: rebalance.to.daily_budget_krw,
-        });
+        if (r.result.status !== 'success') {
+          throw new Error(r.error_message ?? '리밸런싱을 적용하지 못했어요.');
+        }
         setRebalanceMsg('적용 완료 — 두 캠페인의 일예산을 변경했어요.');
       }
       setRebalance(null);
       void fetchData();
     } catch (e) {
       setRebalanceMsg(e instanceof Error ? e.message : '적용 실패');
+      // 부분 변경(보상 실패 등) 시 화면 예산을 서버 정본으로 갱신
+      void fetchData();
     } finally {
       setRebalanceBusy(false);
     }

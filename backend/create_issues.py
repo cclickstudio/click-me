@@ -150,7 +150,8 @@ ISSUES = [
     # ══════════════════════════════════════════════════════════════
     # ── 채팅 / 오케스트레이터 (agent-chat) ──
     {
-        "title": "[Chat] 챗 숏텀 메모리 — 체크포인터 단일소스 + history 프리앰블 주입 + 라우터 연속성",
+        "title": "[Chat] 챗 숏텀 메모리 — 체크포인터 단일소스 + history 프리앰블 주입 "
+        "+ 라우터 연속성",
         "labels": ["agent-chat"],
         "body": (
             "대화 컨텍스트를 턴 넘어 유지하는 숏텀 메모리 도입.\n\n"
@@ -247,7 +248,8 @@ ISSUES = [
         ),
     },
     {
-        "title": "[Generator] 생성 자동화 seam — LLM 재시도·provider 폴백·stuck 워커·품질 다이제스트",
+        "title": "[Generator] 생성 자동화 seam — LLM 재시도·provider 폴백·stuck 워커"
+        "·품질 다이제스트",
         "labels": ["agent-generator"],
         "body": (
             "생성 파이프라인의 신뢰성·관측성 seam.\n\n"
@@ -398,7 +400,8 @@ ISSUES = [
         ),
     },
     {
-        "title": "[Management] 이상감지 선제 제안(remediation advisor) + 채팅 consult_anomaly + 알림 sink",
+        "title": "[Management] 이상감지 선제 제안(remediation advisor) + 채팅 consult_anomaly "
+        "+ 알림 sink",
         "labels": ["agent-management"],
         "body": (
             "이상 감지 시 조치 옵션을 선제 제안하는 어드바이저.\n\n"
@@ -420,7 +423,8 @@ ISSUES = [
         ),
     },
     {
-        "title": "[Management] 집행 게이트 하드닝 + 승인 원장(management_approval_records·Alembic 0010)",
+        "title": "[Management] 집행 게이트 하드닝 "
+        "+ 승인 원장(management_approval_records·Alembic 0010)",
         "labels": ["agent-management"],
         "body": (
             "집행 승인을 원장으로 기록·강제하는 게이트 하드닝.\n\n"
@@ -453,7 +457,8 @@ ISSUES = [
     },
     # ── 인프라 / 인증 / 배포 (devops·setup) ──
     {
-        "title": "[Infra] EC2 프로비저닝 자동화 심화(EIP·자동 .env·Portainer·resize·TLS) + Secrets 10→6",
+        "title": "[Infra] EC2 프로비저닝 자동화 심화(EIP·자동 .env·Portainer·resize·TLS) "
+        "+ Secrets 10→6",
         "labels": ["devops"],
         "body": (
             "배포 인프라 프로비저닝을 자동화.\n\n"
@@ -495,7 +500,8 @@ ISSUES = [
     },
     # ── 프론트 개편 (frontend) ──
     {
-        "title": "[Frontend] 디자인시스템 전면 개편 — shadcn+토큰+테마 14종+앱셸 리스킨+랜딩 재설계",
+        "title": "[Frontend] 디자인시스템 전면 개편 — shadcn+토큰+테마 14종"
+        "+앱셸 리스킨+랜딩 재설계",
         "labels": ["frontend"],
         "body": (
             "프론트 전반을 디자인 토큰 기반으로 재개편.\n\n"
@@ -506,7 +512,8 @@ ISSUES = [
         ),
     },
     {
-        "title": "[Frontend] 역할별 대시보드 재구성(KPI 델타·주간추이·활동피드·크레딧) + 요약 엔드포인트",
+        "title": "[Frontend] 역할별 대시보드 재구성(KPI 델타·주간추이·활동피드·크레딧) "
+        "+ 요약 엔드포인트",
         "labels": ["frontend"],
         "body": (
             "역할별로 대시보드를 실데이터 기반 재구성.\n\n"
