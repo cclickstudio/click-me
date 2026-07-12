@@ -248,9 +248,7 @@ def build_executor(
     audit = InMemoryAuditLog()
     idem = InMemoryIdempotencyStore()
     budget = BudgetAuthority(limit_krw=limit_krw)
-    allowed = (
-        (*DEFAULT_ALLOWED_MODES, ExecutionMode.LIVE) if allow_live else DEFAULT_ALLOWED_MODES
-    )
+    allowed = (*DEFAULT_ALLOWED_MODES, ExecutionMode.LIVE) if allow_live else DEFAULT_ALLOWED_MODES
     executor = Executor(
         writer,
         idempotency=idem,

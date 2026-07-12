@@ -129,6 +129,7 @@ from domain.management.execution.tier import (
     BudgetAuthority,
     TenantBudgetRegistry,
 )
+from domain.management.history_link import build_history_recorder
 from domain.management.naming import suggest_campaign_names
 from domain.management.target_check import is_target_missed
 from domain.management.wiring import (
@@ -286,6 +287,7 @@ def _get_executor(writer=None) -> Executor:
             current_policy_version=APPROVAL_POLICY_VERSION,
             allowed_modes=allowed,
             approvals=_APPROVAL_STORE,
+            history_recorder=build_history_recorder(),  # 실행 확정 → 롱텀 메모리 기록
         )
     if _executor is None:
         _executor = Executor(
@@ -297,6 +299,7 @@ def _get_executor(writer=None) -> Executor:
             current_policy_version=APPROVAL_POLICY_VERSION,
             allowed_modes=allowed,
             approvals=_APPROVAL_STORE,
+            history_recorder=build_history_recorder(),  # 실행 확정 → 롱텀 메모리 기록
         )
     return _executor
 
