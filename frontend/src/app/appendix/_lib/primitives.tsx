@@ -3,7 +3,7 @@
 // 프로젝트 디자인 토큰(surface/ink/line/semantic)만 사용, 텍스트는 항상 ink 토큰(색상은 마크에만).
 
 import { createContext, useContext } from 'react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, ExternalLink } from 'lucide-react';
 
 export type Tone = 'neutral' | 'primary' | 'point' | 'success' | 'warning' | 'danger' | 'muted';
 export type Density = 'presentation' | 'normal';
@@ -62,6 +62,9 @@ const SIZES = {
     barValue: 'text-lg font-semibold',
     barWidth: 'max-w-[48px]',
     barLabel: 'text-sm',
+    shotsGrid: 'grid-cols-1 gap-5 sm:grid-cols-2',
+    shotCaption: 'mt-2 text-base',
+    shotLinkIcon: 16,
   },
   normal: {
     stepBox: 'rounded-lg border min-w-[140px] px-4 py-3',
@@ -98,6 +101,9 @@ const SIZES = {
     barValue: 'text-xs font-semibold',
     barWidth: 'max-w-[28px]',
     barLabel: 'text-xs',
+    shotsGrid: 'grid-cols-1 gap-3 sm:grid-cols-2',
+    shotCaption: 'mt-1.5 text-xs',
+    shotLinkIcon: 12,
   },
 } as const;
 
@@ -276,6 +282,39 @@ export function StatusRow({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// 실제 운영 화면 스크린샷 그리드 — href를 주면 캡션이 라이브 페이지로 가는 새 탭 링크가 된다.
+// cols=1이면 세로 1열로 쌓는다(채널별 묶음 배치용).
+export function ShotGrid({ shots, cols }: { shots: { src: string; caption: string; href?: string }[]; cols?: 1 }) {
+  const s = SIZES[useDensity()];
+  return (
+    <div className={`grid ${cols === 1 ? 'grid-cols-1 gap-4' : s.shotsGrid}`}>
+      {shots.map((sh) => (
+        <figure key={sh.src}>
+          <div className="flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-lg border border-line bg-surface-1 p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={sh.src} alt={sh.caption} className="h-full w-full object-contain" />
+          </div>
+          <figcaption className={`${s.shotCaption} text-ink-tertiary`}>
+            {sh.href ? (
+              <a
+                href={sh.href}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+              >
+                {sh.caption}
+                <ExternalLink size={s.shotLinkIcon} strokeWidth={2} />
+              </a>
+            ) : (
+              sh.caption
+            )}
+          </figcaption>
+        </figure>
+      ))}
     </div>
   );
 }
