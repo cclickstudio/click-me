@@ -754,6 +754,361 @@ export const EXHIBITS: Record<string, Exhibit> = {
       />
     ),
   },
+  'sim-ssr-fix': {
+    title: 'SSR 재설계 — 봉인 해금 조건 이행(검증 통과)',
+    note: '앵커를 반응 문체로 재작성 + softmax 정규화 + 임베딩 모델 상향. 강도 5단계 대조 세트 실측 — 기본값 전환은 팀 합의 후(현재 opt-in).',
+    render: () => (
+      <Matrix
+        columns={['구 SSR', '재설계 SSR']}
+        rows={[
+          { label: '강한 부정(기대 1~2)', cells: [{ text: '3.26', tone: 'danger' }, { text: '1.23', tone: 'success' }] },
+          { label: '중립(기대 3)', cells: [{ text: '3.19', tone: 'danger' }, { text: '2.99', tone: 'success' }] },
+          { label: '강한 긍정(기대 4~5)', cells: [{ text: '3.47', tone: 'danger' }, { text: '4.12', tone: 'success' }] },
+        ]}
+      />
+    ),
+  },
+  'sim-fixed-panel': {
+    title: '고정 패널 — A/B 비교의 통계적 타당성',
+    note: '리서치 업계의 고정 패널 개념과 동일 — grounding 원천인 KISDI 미디어패널 자체가 동일표본 추적조사.',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: 'A/B를 서로 다른 랜덤 패널로 비교하면', state: 'danger', detail: '패널 구성 차이가 광고 차이와 교락 — 시안 비교가 통계적으로 무효' },
+          { label: '고정 패널(1,000명 · 시드 고정 · 버전 기록)', state: 'success', detail: '동일 패널에 노출하는 짝지은 비교로 전환 + 재현성 확보' },
+          { label: '캐시는 프로필만', state: 'neutral', detail: '반응은 광고마다 새로 생성 — 응답 재활용 아님(보고서 방법론에 명시)' },
+        ]}
+      />
+    ),
+  },
+  'sim-oversampling': {
+    title: '층화 과대표집 — 얇은 연령층 표본 보강',
+    note: 'sample_size 300 이상이면 자동 stratified 전환. 대가(가중 편차로 유효표본 감소)는 리포트에 숫자로 표기.',
+    render: () => (
+      <InfoCards
+        items={[
+          { label: '60대+ 표본(300명 비례 추출)', value: '18명', detail: '셀이 얇아 세그먼트 지표가 노이즈', tone: 'danger' },
+          { label: '층화 과대표집 후', value: '50명', detail: '서로 다른 실제 페르소나를 새로 추출 — 총 300콜 불변(재배분)', tone: 'success' },
+          { label: '가중 복원', value: 'w=0.510', detail: '집계 비중은 18명일 때와 동일, 추정만 50명 기반으로 안정', tone: 'point' },
+        ]}
+      />
+    ),
+  },
+  'sim-penetration-bug': {
+    title: '메타 침투율이 1.0을 넘던 사건',
+    note: '나눗셈(침투율) 계산 자체를 제거해 1.0 초과가 구조적으로 재발 불가.',
+    render: () => (
+      <Timeline
+        events={[
+          { date: '문제', label: '침투율(도달÷인구)이 1.0 초과', detail: '복수 계정으로 메타 추산 도달이 census 인구를 초과', tone: 'danger' },
+          { date: '추가 발견', label: '대체재 KISDI 지표도 오염', detail: '소셜피드 비중이 사실상 유튜브 시청만 집계', tone: 'muted' },
+          { date: '해결', label: '메타 광고 관리자 실측 도달 분포를 직접 사용', detail: '인구비중 곱 단계 제거(연령 marginal)', tone: 'success' },
+        ]}
+      />
+    ),
+  },
+  'sim-tv-fallback': {
+    title: '"메타 광고를 TV에서 봤어요" — 모순 반응 버그',
+    note: '숫자는 안 깨지는데 서사가 깨지는 LLM 시뮬레이션 특유의 버그 — 결과물을 직접 읽어야 잡힌다.',
+    render: () => (
+      <Timeline
+        events={[
+          { date: '버그', label: '고령층 페르소나의 노출맥락이 TV로 기록', detail: '소셜 후보가 비면 TV·신문으로 조용히 폴백', tone: 'danger' },
+          { date: '수정', label: '노출맥락을 소셜피드로만 한정', detail: '후보가 없어도 비소셜 폴백 금지 — 모순을 만들 바엔 폴백하지 않음', tone: 'success' },
+        ]}
+      />
+    ),
+  },
+  'sim-ai-bias': {
+    title: '페르소나 다양성은 LLM이 아니라 데이터가 강제',
+    note: '',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '속성은 실데이터 통계 샘플링', state: 'success', detail: '행안부 인구 · KISDI 미디어 · OCEAN 성격 실분포에서 추출' },
+          { label: 'LLM은 마지막에 인물 서사만 입힘', state: 'neutral', detail: 'LLM이 인구 구성을 정하지 않음 — 동질화 방지 설계' },
+        ]}
+      />
+    ),
+  },
+  'sim-no-ctr': {
+    title: '"예측 CTR ○%"를 말하지 않는 이유',
+    note: '',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '실측 스케일(CTR %) 환산 금지', state: 'danger', detail: '실측 근거 없이 단언하지 않는다는 의도적 원칙' },
+          { label: '클릭 의향률 + 신뢰구간으로만 표기', state: 'success', detail: '연결 캠페인 실측 5건 누적 시 calibration 해금' },
+        ]}
+      />
+    ),
+  },
+  'sim-sycophancy': {
+    title: '듣기 좋은 결과만 내놓지 않는 장치',
+    note: '',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '거부율이 4대 KPI에 별도 존재', state: 'success', detail: '거부 비율 + 사유 분해를 그대로 노출' },
+          { label: '분포 전체 표시 — 평균 단언 금지', state: 'neutral', detail: '부정 반응을 평균 뒤에 숨기지 않음' },
+        ]}
+      />
+    ),
+  },
+  'sim-target-filter': {
+    title: '특정 고객층만 골라 테스트',
+    note: '',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '타깃 지정(target_filter) 지원', state: 'success', detail: '연령·성별 등 특정 층만 골라 시뮬레이션' },
+          { label: '타깃 내부도 실분포 유지', state: 'neutral', detail: '필터 안에서 재정규화 후 비례 추출 — 내부 구성이 왜곡되지 않음' },
+        ]}
+      />
+    ),
+  },
+  'sim-privacy': {
+    title: '페르소나와 개인정보',
+    note: '',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '실존 개인 데이터 미포함', state: 'success', detail: '통계 분포 기반 합성 인물 — 개인 단위 원천 데이터 없음' },
+          { label: '연령·성별·지역 등 집계 분포에서 샘플링', state: 'neutral', detail: '행안부·KISDI 공표 통계 수준의 입력만 사용' },
+        ]}
+      />
+    ),
+  },
+  'sim-responsibility': {
+    title: '예측이 틀렸을 때의 책임 구조',
+    note: '포지셔닝 — 실측 대체가 아니라 "감·내부 회의보다 나은 의사결정 근거".',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '시뮬레이션은 근거 제공까지', state: 'neutral', detail: '신뢰구간·표본 부족 플래그로 불확실성을 함께 표기' },
+          { label: '돈이 움직이는 결정은 사람이 승인(HITL)', state: 'success', detail: '집행 판단의 주체는 항상 광고주 — 예측을 단정으로 팔지 않음' },
+        ]}
+      />
+    ),
+  },
+  'sim-call-count': {
+    title: '표본 1,000명 = LLM 1,000콜?',
+    note: '반응 콜만 표본 수에 비례 — 나머지는 캐시·공유로 상수. 그리고 표본 크기 300명 이상이면 배분 방식이 자동으로 층화 과대표집(stratified)으로 전환된다(사용자 선택이 아니라 sample_size로 결정). 과대표집은 얇은 연령층(예 60대+)에 표본 예산을 더 배정해 실제 페르소나를 더 많이 새로 뽑고 붐비는 층(20대)에서 그만큼 덜 뽑는 재배분이라, 복제·부풀리기가 아니고 총 콜 수도 그대로다. 뽑은 만큼 가중치(w=인구비중/표본비중)로 되돌려 대표성은 동일하게 유지한다. 1,000명이면 얇은 층이 이미 충분히 두꺼워 floor가 거의 안 걸려 과대표집 결과가 단순 비례 추출에 수렴한다. 근거: docs/simulation/Persona/표본 가중 설명.md · 표본 노이즈 설명.md.',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '페르소나 프로필 생성', state: 'success', detail: '고정 패널 캐시 — 시뮬레이션 시점 추가 콜 0회' },
+          { label: '광고 해석(VLM)·루브릭', state: 'success', detail: '광고당 1회만 — 전 페르소나가 공유' },
+          { label: '반응 생성', state: 'warning', detail: '표본 수만큼 1인 1콜 — 단, 300명 표본+가중으로 1,000명 규모를 대표 가능(콜 수 ≠ 대표 인원)' },
+          { label: '300명↑ → 자동 층화 과대표집', state: 'point', detail: '얇은 층을 더 뽑고 붐비는 층을 덜 뽑는 재배분(복제 아님) → 총 콜 불변, 가중으로 대표성 복원. 1,000명이면 과대표집이 단순 비례에 수렴' },
+        ]}
+      />
+    ),
+  },
+  'sim-cost-100': {
+    title: '100명 시뮬레이션 1회 ≈ $2.5 (약 3,500원)',
+    note: '실측(2026-07-13) — 실제 반응 프롬프트 1콜의 토큰 usage(입력 847·출력 2,343, thinking 포함) × 100 + Gemini 공식 단가(3.5 Flash $1.50/$9.00, 2.5 Flash $0.30/$2.50 per 1M, ai.google.dev/gemini-api/docs/pricing). 환율 1,400원 가정. 배치 API 사용 시 단가 50% 추가 할인.',
+    render: () => (
+      <InfoCards
+        items={[
+          { label: '반응 100콜 — Gemini 3.5 Flash', value: '$2.24', detail: '비용의 90%. 콜당 입력 847·출력 2,343토큰 실측', tone: 'warning' },
+          { label: '해석·루브릭 1콜 + QA 버퍼 10%', value: '$0.23', detail: '표본 수와 무관한 상수 + 재시도 여유', tone: 'neutral' },
+          { label: '합계 (프로필은 패널 캐시로 0콜)', value: '≈ 3,500원', detail: '기존 사전 검증(FGI 600만~1,500만 원)의 수천분의 1', tone: 'success' },
+        ]}
+      />
+    ),
+  },
+  'sim-concurrency': {
+    title: '동시 고객 100개사 — 정직한 현재 규모',
+    note: '정직한 한계 — 확장 시 잡 큐 도입 재검토가 Open Issue로 문서화되어 있음.',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '현재 단일 EC2 + 인프로세스 async', state: 'muted', detail: '8주 내 완주를 우선한 선택 — 100개사 동시 실행은 현 단계 목표가 아님' },
+          { label: '확장 경로는 설계에 반영됨', state: 'neutral', detail: '반응 생성이 병렬 단위라 잡 큐(SQS 등)·워커 분리로 수평 확장 가능한 구조' },
+        ]}
+      />
+    ),
+  },
+  'sim-llm-resilience': {
+    title: 'LLM 가격 인상·장애 대비',
+    note: '',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '폴백 체인 기본 ON', state: 'success', detail: 'Gemini 503/실패 시 GPT로 자동 전환 — 단일 벤더 장애에 무중단' },
+          { label: '모델 교체는 설정 한 줄', state: 'success', detail: '반응·해석 모델을 env로 교체 — 가격 변동 시 벤더 이동 용이' },
+          { label: '3사 멀티 LLM 운용 경험', state: 'neutral', detail: 'OpenAI·Google·Anthropic을 역할별로 이미 병행 사용 중' },
+        ]}
+      />
+    ),
+  },
+  'sim-real-campaign': {
+    title: '실제 배포 광고와의 비교 — 현재 위치',
+    note: '"없다"가 아니라 "쌓는 구조가 이미 있다" — 실측 5건 누적 시 calibration 자동 해금.',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: 'KOBACO 실측 벤치마크 참고 제시', state: 'neutral', detail: '2019 소비자행태조사 원자료 반영 — 단 8대 업종 한정·문항 불일치 한계 명시' },
+          { label: '사비로 실제 Meta 캠페인 집행', state: 'success', detail: 'CTR·CPC·CPM 등 실측 데이터 확보(매니지먼트 실연동)' },
+          { label: '실측 5건 누적 시 calibration 해금', state: 'primary', detail: '예측↔실측 보정이 자동으로 켜지는 설계' },
+        ]}
+      />
+    ),
+  },
+  'sim-improvement-case': {
+    title: '"개선했더니 성과가 올랐다"는 사례 — 정직한 답',
+    note: '정직한 한계 — 실 집행 인과 사례는 아직 없다. 있는 것과 없는 것을 구분해 답할 것.',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '내부 지표 개선은 확인됨', state: 'success', detail: '시뮬 진단 → 개선 시안 생성 루프에서 4대 KPI 축 개선을 반복 검증' },
+          { label: '실제 집행 성과 인과 사례', state: 'muted', detail: '아직 미확보 — 실측 calibration 해금 이후 검증 가능' },
+        ]}
+      />
+    ),
+  },
+  'sim-confidentiality': {
+    title: '업로드한 광고 시안의 기밀 유지',
+    note: '',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: 'LLM API 입력은 모델 학습에 사용되지 않음', state: 'success', detail: 'OpenAI·Google API 데이터 정책 — 소비자용 챗봇과 다른 계약' },
+          { label: '기밀 데이터 평문 로그 금지', state: 'success', detail: '예산·크리에이티브는 로그에 남기지 않는 내부 정책' },
+          { label: '외부 플랫폼 API 키 암호화 저장', state: 'neutral', detail: 'AES-256 또는 AWS Secrets Manager' },
+        ]}
+      />
+    ),
+  },
+  'sim-persona-pipeline': {
+    title: '페르소나 생성 방식 — 데이터가 만들고 LLM은 서사·반응만',
+    note: '핵심 원리 — 다양성은 "실데이터 통계 샘플링"이 강제하고, LLM은 맨 끝 두 단계에서만 등장한다. 단계 ①~③은 LLM을 전혀 안 쓰는 순수 통계 쿼터 샘플링(결정적 seed)이고, 여기서 이미 "서로 다른 1,000명"이 확정된다. LLM에게 "30대 여성 만들어줘"라고 시키면 학습 데이터 평균으로 수렴해 다들 비슷해지기(동질화) 때문에, 속성은 전부 한국 실통계에서 뽑고 LLM은 ④에서 그 속성을 인물 소개로 풀고 ⑤에서 "그 사람 본인처럼" 광고에 반응하는 일만 한다. ④는 패널 빌드 때 1회만 호출해 캐시하고, ⑤만 광고마다 새로 돈다. 최종 KPI(클릭의향률·구매의도 평균·신뢰구간)는 LLM이 아니라 집계 엔진이 반응 JSON을 코드로 가중 평균·부트스트랩한 값이다. 상세: docs/simulation/Persona/페르소나 생성 파이프라인 설명.md · 페르소나 생성 전략.md.',
+    render: () => (
+      <div className="space-y-5">
+        <Pipeline
+          steps={[
+            { label: '① 인구통계', detail: '나이·성별·지역 — 행안부 쿼터(정수 비례)', tone: 'point' },
+            { label: '② 성격 OCEAN', detail: '서울대-카카오 5유형 · 연령×성별 조건화', tone: 'point' },
+            { label: '③ 미디어·소득·소비가치', detail: 'KISDI 미디어패널 · 대학내일 실분포', tone: 'point' },
+            { label: '④ 인물 서사 (LLM 1회)', detail: '정해진 속성을 소개글로 → 패널 캐시', tone: 'neutral' },
+            { label: '⑤ 광고 반응 (LLM · 광고마다)', detail: '"이 사람 본인처럼" → 집계용 JSON', tone: 'warning' },
+          ]}
+        />
+        <div>
+          <p className="mb-2 text-sm font-semibold text-ink-tertiary">
+            ⑤ 광고 반응 단계에서 LLM에 실제로 넘어가는 프롬프트 — 우측 ← 는 각 줄이 어느 데이터에서 오는지(값 빈 줄은 자동 생략)
+          </p>
+          <pre className="overflow-x-auto whitespace-pre rounded-xl border border-line bg-surface-1 p-4 font-mono text-xs leading-relaxed text-ink-secondary">
+{`당신은 아래 한국 소비자 '본인'입니다. 지금 인스타그램·페이스북(메타) 피드를 넘겨보다가
+아래 광고를 마주쳤습니다. 이 사람의 성격·형편·미디어 습관에 충실하게, 광고에 솔직하게
+반응하세요. 피드 광고라 관심이 없으면 손가락으로 즉시 넘길 수 있습니다.
+교과서적 정답이 아니라 이 사람의 실제 반응을.
+
+[나]
+- 27세 M, 경기도                                       ← population 실데이터(행안부)
+- 학력 대학교, 월소득 100만원 미만                       ← socioeconomic(KISDI)
+- 성격(OCEAN): 개방성 매우 낮음, 성실성 보통, 외향성 보통,  ← B-6 연령 조건화
+  친화성 낮음, 신경증 매우 낮음                            + raw z-score를 정성 수준으로 변환
+- 주 이용 미디어: PC (하루 약 307분, 보통 이용자)          ← media(KISDI) + 이용강도
+- 중시 소비가치: ['성능', '품질', '편의', '저렴한 가격', …]  ← consumption(+작업2 OCEAN 조건화)
+- 서사: (4-a에서 생성된 인물 소개)
+- 지금 노출 맥락: 저녁·집·스마트폰/휴대폰·SNS              ← media 노출맥락
+  [내 성향(한국 특화)] 체면 65%, 동조 …                   ← 작업4 (값 비면 줄 생략 — 지금 안 보임)
+[내 세대]
+- 브랜드·문화 형성기 2014~2024년, 모르는 브랜드면 '낯섦' 반영,
+  내 나이대 어투로 말하기                                 ← Tier1 세대 게이팅
+
+[광고]
+- 업종: 음료(제로 탄산수) / 목적: 신제품 인지·구매전환     ← VLM 감지(목적 추가)
+- 메시지: 제로 칼로리 신제품, 편의점 단독 출시
+- 가격: 정가 30,000원 → 할인가 19,900원 (내 월소득 기준 판단) ← ad_features
+- 브랜드 언급: 있음 / 사회적 증거(후기·인기): high
+- 브랜드 시대성(전원 공유 사실): … (친숙/낯섦은 내 형성기로 판단)   ← Tier2 brand_era
+[광고 비주얼]                                            ← VLM visual_elements
+- 핵심 피사체: 제품 캔 클로즈업                            (피사체 추가)
+- 첫눈에 띄는 것: 파란 캔과 물방울
+- 주요 시각요소: 제품 캔, 모델, 할인 배지, 로고
+- 색감·톤: 시원한 블루·화이트
+  [브랜드 인지도] OOO는 내 또래 인지도 75% …             ← 작업1 (값 비면 줄 생략 — 지금 안 보임)
+
+[출력 — 아래 JSON만, 설명·코드펜스 없이]
+{
+  "aisas": {attention, interest, search, action, share},
+  "drop_stage", "drop_reason_tag",                       ← 정해진 enum만
+  "purchase_intent": 1~5, "trust": 1~5, "rejected": bool,
+  "rejection_reason_tag", "emotion_tag",                 ← 정해진 enum만
+  "perceived_message", "perceived_target",
+  "noticed_first": "내 성격·가치상 가장 먼저 눈에 든 요소",
+  "utterance": "한 문장 솔직한 반응"
+}
+주의: AISAS 깔때기(action=true면 attention·interest도 true), 태그는 enum에서만, noticed_first는 사람마다 다르게.`}
+          </pre>
+        </div>
+      </div>
+    ),
+  },
+  'sim-cost-strategy': {
+    title: '시뮬레이션 비용을 줄이는 4겹 구조',
+    note: '',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '전수 시뮬 금지 — 표본 + 가중', state: 'success', detail: '여론조사 원리로 콜 수 자체를 상한' },
+          { label: '고정 패널 — 프로필 생성비 1회', state: 'success', detail: '런타임엔 반응 콜만 지출' },
+          { label: '반응은 경량 Flash 모델', state: 'success', detail: '대량 병렬 콜 구간에 저단가 모델 배정' },
+          { label: '대규모 실행은 배치 API · Phase 2 소형/로컬 모델', state: 'neutral', detail: '비용 전략 문서에 단계별로 설계됨' },
+        ]}
+      />
+    ),
+  },
+  'sim-data-sources': {
+    title: '페르소나 grounding 데이터 출처',
+    note: '전부 공표 통계·학술 데이터 — 개인 단위 원천 데이터 없이 통계 분포에서 뽑은 합성 인물이다. 페르소나 생성의 핵심 축(인구·OCEAN·미디어·소득·소비가치)은 실값 적재를 마쳤고, 심층 소비심리(체면·동조·눈치)·브랜드 보조인지율은 코드 프레임워크만 두고 값이 비어 있어 graceful fallback(회귀 0)한다. ⚠️ 서울대-카카오 OCEAN은 CC BY-NC-ND(비상업·변경금지) 라이선스라 발표·연구 인용은 자유지만 상업 서비스화 시점에는 법무 검토가 필요하다. 각 소스의 URL·접근 방법·라이선스 전체는 docs/simulation/Persona/데이터 확보처 가이드.md에 정리돼 있다.',
+    render: () => (
+      <Matrix
+        columns={['출처', '규모·라이선스', '확보']}
+        rows={[
+          { label: '인구(연령×성별×지역)', cells: [{ text: '행안부 주민등록 / KOSIS' }, { text: '전국 5,109만 일치 · 공공데이터' }, { text: '✅ 실값', tone: 'success' }] },
+          { label: '성격(OCEAN)', cells: [{ text: '서울대-카카오 Nature(2026)' }, { text: '표본 81만 · CC BY-NC-ND ⚠️', tone: 'warning' }, { text: '✅ 실값', tone: 'success' }] },
+          { label: '미디어 행동·소득·학력', cells: [{ text: 'KISDI 한국미디어패널 2024' }, { text: 'raw 연령×성별 교차(4,006가구)' }, { text: '✅ 실값', tone: 'success' }] },
+          { label: '소비가치', cells: [{ text: '대학내일20대연구소' }, { text: '공개 조사 응답률' }, { text: '✅ 실값', tone: 'success' }] },
+          { label: 'Meta 도달 분포', cells: [{ text: 'Meta 광고 관리자' }, { text: '추산 잠재고객 실측(연령 marginal)' }, { text: '✅ 실값', tone: 'success' }] },
+          { label: '심층 심리·브랜드 인지', cells: [{ text: 'MDIS 사회조사 · 갤럽/오픈서베이' }, { text: '체면·동조·보조인지 — 계약·수집 필요' }, { text: '☐ 프레임워크만', tone: 'muted' }] },
+        ]}
+      />
+    ),
+  },
+  'sim-llm-models': {
+    title: '시뮬레이션 LLM 배정 — 고성능이 아니라 적재적소',
+    note: '수백 콜이 도는 반응 구간엔 경량 모델을 쓰고, 품질은 페르소나 조건화 + QA 재시도로 확보.',
+    render: () => (
+      <Matrix
+        columns={['모델', '이유']}
+        rows={[
+          { label: '페르소나 반응', cells: [{ text: 'Gemini Flash 계열' }, { text: '표본 수만큼 병렬 호출 — 비용 효율 최우선' }] },
+          { label: '광고 해석(VLM)·루브릭·QA', cells: [{ text: 'Gemini 2.5 Flash' }, { text: '이미지 이해 + 광고당 1회라 부담 적음' }] },
+          { label: '장애 폴백', cells: [{ text: 'GPT(4.1-mini)' }, { text: '503 시 자동 전환 — 기본 ON' }] },
+        ]}
+      />
+    ),
+  },
+  'sim-evidence-papers': {
+    title: 'LLM이 소비자 행태를 모사한다는 학술 근거',
+    note: '이 근거들은 "방향성·집단 분포는 신뢰할 만하다"까지만 뒷받침한다 — 반대 연구(Santurkar 2023 — LLM 응답이 특정 인구집단으로 치우치는 편향)도 함께 검토했고, 그래서 우리는 "방향성은 신뢰, 절대 수치는 단정 금지(예측 CTR ○% 환산 금지)"를 원칙으로 삼는다. 마지막 Chu 외(2025)는 우리 시뮬의 AISAS 클릭 깔때기 설계와 같은 프레임을 학술적으로 뒷받침한다.',
+    render: () => (
+      <Matrix
+        columns={['무엇을 어떻게 보였나']}
+        rows={[
+          { label: 'Argyle 외 (2023) — Out of One, Many', cells: [{ text: '인구통계 프로파일을 조건으로 주면 미국 ANES 설문의 집단별 응답 분포를 재현("algorithmic fidelity"·실리콘 표본) — "데이터가 만든 페르소나"라는 우리 방식의 직접 토대', tone: 'success' }] },
+          { label: 'LLMs Reproduce Human Purchase Intent (2025)', cells: [{ text: '실제 설문 약 9,300건과 대조 — LLM 페르소나의 구매의도(1~5점) 분포가 집단 수준에서 사람 응답과 유사하게 재현됨. 우리 구매의도 KPI(1~5점 분포)와 같은 척도', tone: 'success' }] },
+          { label: 'Brand·Israeli·Ngwe (2023, 하버드 HBS WP)', cells: [{ text: 'GPT에 인구속성을 부여해 지불의사(WTP)를 물으면 가격이 오를수록 수요가 줄어드는 하방 수요곡선·가격민감도가 실제 소비자 조사와 유사하게 나타남' }] },
+          { label: 'Park 외 (2024, 스탠퍼드·딥마인드)', cells: [{ text: '실제 1,052명을 2시간 인터뷰로 에이전트화 — 본인의 재응답 대비 GSS 정규화 정확도 약 85% 재현. 단 "2시간 인터뷰"라는 무거운 전제가 붙는다' }] },
+          { label: 'Chu 외 (2025, arXiv:2510.18155)', cells: [{ text: 'LLM 멀티에이전트(소비자·판매자·환경)가 가상 town에서 가격할인 시나리오의 구매결정을 규칙 없이 시뮬 — AIDA·AISAS 소비심리 프레임과 정합하는 가격민감도·사회적 영향·구매 타이밍이 창발. 사전검증 도구로서의 LLM 시뮬을 뒷받침', tone: 'success' }] },
+        ]}
+      />
+    ),
+  },
   'sim-debate-before-after': {
     title: '페르소나 토론 재구성',
     note: '일반인끼리의 반응 교환만으로는 실무에 쓸 인사이트가 안 나옴.',
@@ -784,6 +1139,20 @@ export const EXHIBITS: Record<string, Exhibit> = {
           { label: '예측은 실측을 100% 재현하지 않음', state: 'muted', detail: '대체하는 것은 감·내부 회의 수준' },
           { label: '도달 분포는 generic SNS 기준', state: 'muted', detail: '플랫폼 특정 정밀도에는 한계' },
           { label: '한국 소비심리(체면·동조·눈치)', state: 'muted', detail: '데이터 확보 전까지 반영하지 않는 원칙' },
+        ]}
+      />
+    ),
+  },
+  'sim-prediction-vs-actual': {
+    title: '집행 전 예측 vs 집행 후 실측 — 실제 트래픽 캠페인 1건',
+    note: '사비로 집행한 실제 Meta 트래픽 캠페인(2026-07 · 노출 1,385 · 도달 1,202 · 지출 ₩7,640 · CPC ₩283 · CPM ₩5,516)과 집행 전 시뮬 예측을 나란히 본 실제 화면. ⚠️ 클릭 의향률(예측)과 CTR(실측)은 스케일이 다르므로 같은 수치로 비교하지 않고 축별로 방향만 대조한다 — "예측 CTR ○%" 환산 금지 원칙과 동일. 이 캠페인은 시뮬이 보수적으로 예측(클릭 축에서 예측<실측)한 사례이며, 단일 사례라 일반화하지 않는다 — 실측 5건 누적 시 예측↔실측 calibration이 자동 해금된다.',
+    render: () => (
+      <Matrix
+        columns={['시뮬 예측(집행 전)', '실측(집행 후 · Meta)']}
+        rows={[
+          { label: '클릭 축', cells: [{ text: '클릭 의향률 0% · 약함(<20%)', tone: 'danger' }, { text: 'CTR 1.95% · 양호(≥1%)', tone: 'success' }] },
+          { label: '구매 축', cells: [{ text: '구매의도 1.1/5 · 약함(<3.5)', tone: 'danger' }, { text: 'CVR 0.0% · 전환 0건', tone: 'muted' }] },
+          { label: '보조 지표', cells: [{ text: '신뢰도 2.8/5 · 거부율 90%', tone: 'muted' }, { text: '종합 판정 — 예측보다 실측이 좋음', tone: 'success' }] },
         ]}
       />
     ),
@@ -1506,27 +1875,37 @@ export const DOMAINS: Domain[] = [
       { id: 's1', q: '최신 논문 기법(SSR)을 도입했다가 하루 만에 롤백했다던데, 정확히 뭐가 문제였나요?', exhibitKey: 'sim-ssr-flat' },
       { id: 's2', q: '그 SSR 판정이 구체적으로 어떻게 틀렸는데요?', exhibitKey: 'sim-ssr-inversion' },
       { id: 's3', q: '그럼 지금은 어떤 방식으로 점수를 매기나요?', exhibitKey: 'sim-ssr-rollback' },
-      { id: 's4', q: 'SSR을 며칠 새 여러 번 켰다 껐다 했다던데, 정확히 몇 번이나 바뀌었나요?', exhibitKey: 'sim-ssr-flipflop' },
       { id: 's5', q: '페르소나 토론에서 나온 피드백이 실제로 마케팅에 쓸모가 있나요?', exhibitKey: 'sim-debate-before-after' },
-      { id: 's6', q: '예측이 실제 결과랑 얼마나 맞나요?', exhibitKey: 'sim-limits' },
+      { id: 's6', q: '예측이 실제 결과랑 얼마나 맞나요?', exhibitKey: 'sim-prediction-vs-actual' },
       { id: 's7', q: '한국인 특유의 눈치·체면 문화도 반영되나요?', exhibitKey: 'sim-limits' },
-      { id: 's8', q: '초기에 설계했던 2단계(즉각반응→숙고) 구조는 진짜 아예 안 쓰이나요?', exhibitKey: 'sim-dead-code' },
-      { id: 's9', q: 'SSR 앵커는 몇 차원, 몇 단계로 설계했나요?', exhibitKey: 'sim-anchor-design' },
-      { id: 's10', q: '신뢰구간은 몇 번 반복해서 계산하고, 매번 값이 바뀌나요?', exhibitKey: 'sim-bootstrap-detail' },
       { id: 's11', q: '페르소나 샘플링에 나이 제한 같은 임계값이 있나요?', exhibitKey: 'sim-age-thresholds' },
       { id: 's12', q: '행안부 데이터에 지역 정보가 없으면 어떻게 하나요?', exhibitKey: 'sim-region-fallback' },
-      { id: 's13', q: '전 국민을 다 시뮬레이션하지 않고 표본만 쓰는 이유는요?', exhibitKey: 'sim-sample-principle' },
-      { id: 's14', q: '표본 5명만 요청했는데 43명이 실행되는 비용 버그가 있었다던데요?', exhibitKey: 'sim-panel-bug' },
       { id: 's15', q: '토론에서 의견이 갈리면 어떻게 결론을 내나요?', exhibitKey: 'sim-debate-tiebreak' },
       { id: 's16', q: '실측 벤치마크(KOBACO)가 모든 광고 카테고리에 다 있나요?', exhibitKey: 'sim-kobaco-gap' },
       { id: 's17', q: "'관심 있는 사람만' 따로 보는 지표도 있나요?", exhibitKey: 'sim-interest-conditional' },
-      { id: 's18', q: '리포트 종합점수에 브랜드 인지도는 왜 안 들어가나요?', exhibitKey: 'sim-brand-awareness-excluded' },
-      { id: 's19', q: '세그먼트 히트맵이 안 나올 때가 있던데요?', exhibitKey: 'sim-segment-heatmap-gate' },
       { id: 's20', q: '실제 사람과 비슷한지 어떻게 검증했나요? 외부 설문과 비교했나요?', exhibitKey: 'sim-validation-method' },
       { id: 's21', q: '리포트가 느려서 타임아웃 났던 적 있나요?', exhibitKey: 'sim-report-timeout' },
       { id: 's22', q: '토론 결론이 중간에 잘리는 버그가 있었나요?', exhibitKey: 'sim-json-truncation' },
       { id: 's23', q: '토론 참여 인원은 고정인가요?', exhibitKey: 'sim-debate-size' },
-      { id: 's24', q: '광고가 닿지도 않을 사람까지 표본에 포함되는 문제가 있었다는데 어떻게 고쳤나요?', exhibitKey: 'sim-reachability' },
+      { id: 's26', q: '같은 광고를 두 번 돌리면 같은 결과가 나오나요? A/B 비교는 공정한가요?', exhibitKey: 'sim-fixed-panel' },
+      { id: 's30', q: 'AI가 만든 소비자면 결국 AI 편향 아닌가요?', exhibitKey: 'sim-ai-bias' },
+      { id: 's31', q: '그래서 예측 CTR이 몇 %라는 건가요?', exhibitKey: 'sim-no-ctr' },
+      { id: 's33', q: '우리 고객층(예: 40대 여성)만 골라서 테스트할 수 있나요?', exhibitKey: 'sim-target-filter' },
+      { id: 's34', q: '페르소나가 실존 인물처럼 보이는데 개인정보 문제는 없나요?', exhibitKey: 'sim-privacy' },
+      { id: 's35', q: '실제 사람 응답과 비교한 정확도 수치가 있나요?', exhibitKey: 'sim-validation-method' },
+      { id: 's36', q: '결과가 틀렸을 때 책임은 누가 지나요?', exhibitKey: 'sim-responsibility' },
+      { id: 's37', q: '1,000명이면 LLM을 1,000번 호출하나요?', exhibitKey: 'sim-call-count' },
+      { id: 's38', q: '100명 시뮬레이션 1회 비용은 얼마인가요?', exhibitKey: 'sim-cost-100' },
+      { id: 's39', q: '동시에 고객 100개사가 돌리면 버티나요?', exhibitKey: 'sim-concurrency' },
+      { id: 's40', q: 'LLM 가격이 오르거나 API가 막히면요?', exhibitKey: 'sim-llm-resilience' },
+      { id: 's41', q: '실제 배포 광고와 비교한 사례가 있나요?', exhibitKey: 'sim-real-campaign' },
+      { id: 's42', q: '시뮬 결과대로 개선했더니 성과가 올랐다는 사례가 있나요?', exhibitKey: 'sim-improvement-case' },
+      { id: 's43', q: '우리 광고 시안을 업로드하면 그게 LLM 학습에 쓰이나요? 기밀 유지가 되나요?', exhibitKey: 'sim-confidentiality' },
+      { id: 's44', q: '페르소나를 어떤 방식으로 생성하나요?', exhibitKey: 'sim-persona-pipeline' },
+      { id: 's45', q: '시뮬레이션 비용이 많이 나오는데요? 다른 대안은 없나요?', exhibitKey: 'sim-cost-strategy' },
+      { id: 's46', q: '어떤 데이터들을 활용했죠?', exhibitKey: 'sim-data-sources' },
+      { id: 's47', q: 'LLM은 무슨 모델을 사용하죠? 왜 Gemini를 쓰고, 반응에 고성능 모델을 안 쓰나요?', exhibitKey: 'sim-llm-models' },
+      { id: 's48', q: '이렇게 만든 페르소나가 신뢰할 수 있나요? LLM이 소비자 행태를 모사할 수 있다는 근거 자료가 있나요?', exhibitKey: 'sim-evidence-papers' },
     ],
   },
   {
