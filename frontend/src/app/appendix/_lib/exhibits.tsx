@@ -12,8 +12,11 @@ import {
   MessageSquare,
   Compass,
   Lock,
+  ExternalLink,
+  ArrowDown,
+  ArrowUp,
 } from 'lucide-react';
-import { Pipeline, LayerStack, Matrix, Timeline, InfoCards, StatusRow, BarDistribution, StepBox, type Tone } from './primitives';
+import { Pipeline, LayerStack, Matrix, Timeline, InfoCards, StatusRow, BarDistribution, StepBox, ShotGrid, type Tone } from './primitives';
 
 export type Exhibit = { title: string; note: string; render: () => React.ReactNode };
 
@@ -932,6 +935,71 @@ export const EXHIBITS: Record<string, Exhibit> = {
       />
     ),
   },
+  'mgmt-apscheduler-choice': {
+    title: '왜 Celery·SQS가 아니라 APScheduler인가',
+    note: '핵심 방어 논리 — 스케줄러에는 읽기·무상태·멱등한 잡만 올렸고, 상태를 바꾸는 집행은 전부 사람 승인 뒤에 있다.',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '단일 EC2 모놀리식 — 브로커·워커 프로세스 추가는 운영 인프라만 늘림', state: 'success', detail: '잡이 주기적 읽기 스캔+제안 기록이라 큐잉·재시도 보장이 필요한 성격이 아님' },
+          { label: 'cron 대비 — 앱 컨텍스트(설정·DB·wiring)를 그대로 공유', state: 'success', detail: 'MANAGEMENT_SCHEDULER_ENABLED 플래그 하나로 dev·CI에서는 기본 off' },
+          { label: '다중 인스턴스 확장 시 중복 실행 한계', state: 'muted', detail: '알고 미룬 트레이드오프 — 스케일아웃 시점이 곧 잡 큐 도입 재검토 시점(Open Issue로 관리)' },
+        ]}
+      />
+    ),
+  },
+  'mgmt-scheduler-restart': {
+    title: '서버 재시작과 스케줄러',
+    note: '잡 영속화가 필요 없는 잡만 스케줄러에 올렸다 — 그래서 인메모리로 충분하다.',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '잡스토어는 인메모리 — 재시작하면 스케줄 상태 유실', state: 'muted', detail: '의도적으로 영속화하지 않음' },
+          { label: '잡이 전부 무상태 읽기 스캔 — 다음 틱에 처음부터 재계산하면 끝', state: 'success' },
+          { label: '재기동 시 같은 제안 중복 적재는 dedup_key로 차단', state: 'success', detail: 'rebalance:{from}:{to} · weekly:{until} 등 automation_runs 단위 dedup' },
+        ]}
+      />
+    ),
+  },
+  'mgmt-scheduler-intervals': {
+    title: '워커 주기는 잡마다 다르다',
+    note: 'CPC는 시간 단위로 출렁이는 지표 — 예산 이동 제안만 일 단위이고, 이상 감지는 시간 단위로 돈다.',
+    render: () => (
+      <InfoCards
+        items={[
+          { label: '이상 스캔(게재0·소재피로·지갑 가드레일)', value: '60분', detail: '빠른 대응이 필요한 감지', tone: 'point' },
+          { label: '리밸런싱 제안', value: '24시간', detail: '잦은 리밸런싱은 오히려 예산을 흔듦', tone: 'primary' },
+          { label: '주간 성과 리포트', value: '7일', detail: '읽기 전용 집계 다이제스트', tone: 'neutral' },
+        ]}
+      />
+    ),
+  },
+  'mgmt-scheduler-eventloop': {
+    title: '인프로세스 스케줄러가 API를 블로킹하지 않는 이유',
+    note: '',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '잡 내용이 전부 async I/O(Meta API 조회·DB 적재)', state: 'success', detail: '대기 중에는 이벤트 루프를 양보 — FastAPI 요청 처리와 공존' },
+          { label: 'APScheduler 기본 max_instances=1', state: 'success', detail: '이전 잡이 안 끝났으면 다음 틱이 겹쳐 돌지 않음' },
+          { label: 'CPU 헤비 작업이었다면 별도 프로세스가 정답', state: 'muted', detail: '현재 잡 성격(I/O 위주)이라 인프로세스를 선택한 것' },
+        ]}
+      />
+    ),
+  },
+  'mgmt-rebalance-thresholds': {
+    title: '1.2배·20%라는 숫자의 근거',
+    note: '통계적 최적값이 아니라 안전 마진 설계 — 수치는 campaign_policy 한 곳에만 정의(단일 원천)해 프론트·백이 어긋나지 않는다.',
+    render: () => (
+      <InfoCards
+        items={[
+          { label: 'CPC 격차 게이트', value: '1.2배 초과', detail: '이내 격차는 노이즈로 보고 예산을 흔들지 않음', tone: 'point' },
+          { label: '이동 폭', value: '일예산의 20%', detail: '한 번에 몰지 않고 점진 이동, 백원 단위 절사', tone: 'primary' },
+          { label: '최소 이동액', value: '₩1,000', detail: '이보다 작으면 제안 자체를 안 함', tone: 'neutral' },
+        ]}
+      />
+    ),
+  },
   'mgmt-eval-accuracy': {
     title: '진단 정확도 목표치',
     note: '',
@@ -991,6 +1059,76 @@ export const EXHIBITS: Record<string, Exhibit> = {
           { label: 'MANAGEMENT_READER_MOCK', state: 'success', detail: '매니지먼트 읽기만 따로 mock 처리하는 전용 스위치' },
         ]}
       />
+    ),
+  },
+  'mgmt-live-execution': {
+    title: '실제 집행 — Facebook·Instagram 채널 직접 운영',
+    note: '채널명을 클릭하면 실제 운영 중인 라이브 페이지가 새 탭으로 열립니다. 수치는 전부 실제 운영 화면 스크린샷 기준(2026-07 조회) — 팔로워 0명 신규 계정에서 게시물·광고 집행으로 발생한 반응.',
+    render: () => (
+      <div className="space-y-6">
+        <Pipeline
+          steps={[
+            { label: '채널 개설', detail: 'Facebook 페이지 · Instagram 계정', tone: 'neutral' },
+            { label: '시안 게시', detail: '제너레이터 산출 시안 업로드', tone: 'neutral' },
+            { label: 'Meta Ads 집행', detail: '실제 광고 계정으로 집행', tone: 'primary' },
+            { label: '매니지먼트 수집', detail: 'Marketing API로 성과 읽기', tone: 'success' },
+          ]}
+        />
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+          {/* Facebook 묶음 */}
+          <div className="space-y-4">
+            <a
+              href="https://www.facebook.com/profile.php?id=61590800941467"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-full bg-primary-subtle px-4 py-1.5 text-sm font-semibold text-primary hover:underline"
+            >
+              Facebook — 광고비피해자
+              <ExternalLink size={14} strokeWidth={2} />
+            </a>
+            <InfoCards
+              items={[
+                { label: 'Facebook 조회', value: '1,064', detail: '최근 28일(6/14~7/11)', tone: 'success' },
+                { label: '시작 팔로워', value: '0명', detail: '신규 개설 계정', tone: 'neutral' },
+              ]}
+            />
+            <ShotGrid
+              cols={1}
+              shots={[
+                { src: '/appendix/fb-page.png', caption: 'Facebook 페이지 — 광고비피해자' },
+                { src: '/appendix/fb-insights.png', caption: 'Facebook 프로페셔널 대시보드 인사이트' },
+                { src: '/appendix/fb-likes.png', caption: 'Facebook — 실제 좋아요 알림' },
+              ]}
+            />
+          </div>
+          {/* Instagram 묶음 */}
+          <div className="space-y-4">
+            <a
+              href="https://www.instagram.com/cclick_me"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-full bg-point-subtle px-4 py-1.5 text-sm font-semibold text-point hover:underline"
+            >
+              Instagram — @cclick_me
+              <ExternalLink size={14} strokeWidth={2} />
+            </a>
+            <InfoCards
+              items={[
+                { label: 'Instagram 도달 계정', value: '2,006', detail: '팔로워가 아닌 사람 100%', tone: 'success' },
+                { label: 'Instagram 반응', value: '9', detail: '좋아요 등 상호작용', tone: 'success' },
+              ]}
+            />
+            <ShotGrid
+              cols={1}
+              shots={[
+                { src: '/appendix/ig-profile.png', caption: 'Instagram — @cclick_me 프로필' },
+                { src: '/appendix/ig-insights.png', caption: 'Instagram 계정 인사이트' },
+                { src: '/appendix/ig-likes.png', caption: 'Instagram — 실제 좋아요 알림' },
+              ]}
+            />
+          </div>
+        </div>
+      </div>
     ),
   },
 
@@ -1189,6 +1327,78 @@ export const EXHIBITS: Record<string, Exhibit> = {
       />
     ),
   },
+  'chat-memory-tiers': {
+    title: '대화 기억 3계층 — 정확성·용량·지속성',
+    note: '정확성·용량·지속성 세 요구가 서로 충돌해 한 방식으로는 다 만족할 수 없다 — 각 계층이 앞 계층이 못 푸는 문제를 하나씩 맡는다. CPU 캐시–메모리–디스크, 사람의 작업기억–장기기억과 같은 검증된 계층 패턴을 LLM 컨텍스트에 적용한 것.',
+    render: () => (
+      <div className="space-y-2">
+        {/* ① 매 턴 LLM에 주입되는 컨텍스트 윈도우 — 압축 요약 + 최근 4턴 원문 */}
+        <div className="rounded-xl border-2 border-line bg-card p-5">
+          <p className="mb-3 text-base font-semibold text-ink-secondary">매 턴 LLM에 주입되는 컨텍스트 윈도우</p>
+          <div className="flex items-stretch gap-2">
+            <div className="flex flex-[3] flex-col justify-center rounded-lg border-2 border-warning-border bg-warning-subtle px-4 py-3 text-center">
+              <p className="text-base font-semibold text-warning">압축 — 오래된 턴은 요약으로</p>
+              <p className="mt-1 text-sm text-ink-tertiary">용량 담당 · 컨텍스트 초과·토큰 비용 억제</p>
+            </div>
+            {['턴 N-3', '턴 N-2', '턴 N-1', '턴 N'].map((t) => (
+              <div
+                key={t}
+                className="flex flex-1 flex-col justify-center rounded-lg border-2 border-primary/30 bg-primary-subtle px-2 py-3 text-center"
+              >
+                <p className="text-base font-semibold text-primary">{t}</p>
+                <p className="mt-1 text-sm text-ink-tertiary">원문</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-sm text-ink-tertiary">
+            숏텀(정확성 담당) — 최근 4턴은 원문 그대로 유지, &lsquo;아까 그 카피로 해줘&rsquo;가 깨지지 않음
+          </p>
+        </div>
+
+        {/* ↓ 저장 방향 */}
+        <div className="flex items-center gap-2 pl-10">
+          <ArrowDown size={20} strokeWidth={2} className="shrink-0 text-ink-tertiary" />
+          <p className="text-sm text-ink-tertiary">오래된 기록·세션 종료 → 요약과 실행 이력으로 저장</p>
+        </div>
+
+        {/* ② 롱텀 저장소 */}
+        <div className="rounded-xl border-2 border-success-border bg-success-subtle p-5">
+          <p className="mb-3 text-base font-semibold text-success">롱텀 — 세션을 넘는 저장소 · 지속성 담당</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="rounded-lg border border-line bg-card px-4 py-3">
+              <p className="text-base font-semibold text-ink">자연어 요약</p>
+              <p className="mt-1 text-sm text-ink-tertiary">의미 검색 — pgvector</p>
+            </div>
+            <div className="rounded-lg border border-line bg-card px-4 py-3">
+              <p className="text-base font-semibold text-ink">실행 이력</p>
+              <p className="mt-1 text-sm text-ink-tertiary">키워드·날짜 검색 — tsvector</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ↑ 회수 방향 */}
+        <div className="flex items-center gap-2 pl-10">
+          <ArrowUp size={20} strokeWidth={2} className="shrink-0 text-ink-tertiary" />
+          <p className="text-sm text-ink-tertiary">
+            &lsquo;지난주에 돌린 시뮬 결과 기억나?&rsquo; → 검색으로 회수해 컨텍스트에 재주입
+          </p>
+        </div>
+      </div>
+    ),
+  },
+  'chat-memory-counterfactual': {
+    title: '한 계층만 쓰면 무엇이 깨지나',
+    note: '각 계층은 앞 계층이 못 푸는 문제를 하나씩 맡는다 — 숏텀=정확성, 압축=용량, 롱텀=지속성.',
+    render: () => (
+      <StatusRow
+        items={[
+          { label: '숏텀만 쓰면?', state: 'danger', detail: '긴 세션에서 컨텍스트 초과로 실패 + 세션 간 기억이 0이 됨' },
+          { label: '전부 요약하면?', state: 'danger', detail: "'아까 그 문구 그대로'가 깨짐 — 직전 맥락의 정확성을 포기하게 됨" },
+          { label: '롱텀 검색만 쓰면?', state: 'danger', detail: '매 턴 검색 왕복 비용 + 검색이 놓치면 직전 대화조차 모름. 숏텀은 검색 실패가 없는 확실한 기억' },
+        ]}
+      />
+    ),
+  },
 
   // ── 한계·로드맵 ──────────────────────────────────────────────
   'limits-summary': {
@@ -1343,6 +1553,16 @@ export const DOMAINS: Domain[] = [
       { id: 'm16', q: '생성(제너레이터)에서 매니지먼트로 넘어가는 경로가 두 갈래라던데, 왜 하나로 안 합쳤나요?', exhibitKey: 'mgmt-dual-path-honest' },
       { id: 'm17', q: '시뮬레이션 결과를 나중에 다시 조회하는 기능이 없었다는 게 무슨 뜻인가요?', exhibitKey: 'mgmt-result-read-gap' },
       { id: 'm18', q: 'USE_MOCK 설정에서 실수하기 쉬운 함정이 있나요?', exhibitKey: 'mgmt-mock-trap' },
+      { id: 'm19', q: '시뮬레이션만 한 건가요, 실제 광고 집행도 해봤나요?', exhibitKey: 'mgmt-live-execution' },
+      { id: 'm20', q: 'Celery나 SQS 같은 잡 큐 대신 APScheduler를 쓴 이유가 뭔가요?', exhibitKey: 'mgmt-apscheduler-choice' },
+      { id: 'm21', q: '그냥 cron을 쓰면 안 됐나요?', exhibitKey: 'mgmt-apscheduler-choice' },
+      { id: 'm22', q: '서버가 재시작되면 스케줄된 잡은 어떻게 되나요?', exhibitKey: 'mgmt-scheduler-restart' },
+      { id: 'm23', q: 'EC2를 여러 대로 늘리면 같은 잡이 중복 실행되지 않나요?', exhibitKey: 'mgmt-apscheduler-choice' },
+      { id: 'm24', q: '24시간 주기면 이상 상황에 너무 늦게 반응하는 것 아닌가요?', exhibitKey: 'mgmt-scheduler-intervals' },
+      { id: 'm25', q: '같은 프로세스에서 도는 스케줄러가 API 응답을 느리게 하지 않나요?', exhibitKey: 'mgmt-scheduler-eventloop' },
+      { id: 'm26', q: 'CPC 격차 1.2배, 이동 20%라는 숫자는 어떻게 정했나요?', exhibitKey: 'mgmt-rebalance-thresholds' },
+      { id: 'm27', q: '대화 기억을 왜 숏텀·압축·롱텀 3계층으로 나눠 관리했나요?', exhibitKey: 'chat-memory-tiers' },
+      { id: 'm28', q: '그냥 숏텀만 쓰거나, 전부 요약하면 안 되나요?', exhibitKey: 'chat-memory-counterfactual' },
     ],
   },
   {

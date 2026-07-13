@@ -13,6 +13,11 @@ import { DOMAINS, EXHIBITS } from './_lib/exhibits';
 import { TONE_CLASS, DensityProvider, type Density } from './_lib/primitives';
 import { useTheme } from '@/components/ThemeProvider';
 
+// 질문 번호 매핑 — 도메인 폴더 안에서의 원래 순서(1부터). 검색으로 목록이 걸러져도 번호는 유지된다.
+const QUESTION_NO: Record<string, number> = Object.fromEntries(
+  DOMAINS.flatMap((d) => d.questions.map((q, i) => [q.id, i + 1])),
+);
+
 export default function AppendixPage() {
   const { theme, toggle } = useTheme();
   const [density, setDensity] = useState<Density>('presentation');
@@ -165,7 +170,11 @@ export default function AppendixPage() {
                               active ? `${t.bg} ${t.text} font-medium` : 'text-ink-secondary hover:bg-accent hover:text-ink'
                             }`}
                           >
-                            <span className={`mt-1 inline-block h-1 w-1 shrink-0 rounded-full ${active ? t.dot : 'bg-line-strong'}`} />
+                            <span
+                              className={`w-6 shrink-0 text-right font-medium tabular-nums ${active ? t.text : 'text-ink-muted'}`}
+                            >
+                              {QUESTION_NO[item.id]}.
+                            </span>
                             <span className="flex-1">{item.q}</span>
                           </button>
                         );
@@ -227,7 +236,9 @@ export default function AppendixPage() {
                   )}
                 </div>
 
-                <p className={big || fullscreen ? 'mb-2 text-sm text-ink-tertiary' : 'text-caption mb-1'}>Q. {activeQuestion.q}</p>
+                <p className={big || fullscreen ? 'mb-2 text-sm text-ink-tertiary' : 'text-caption mb-1'}>
+                  Q{QUESTION_NO[activeQuestion.id]}. {activeQuestion.q}
+                </p>
                 <h2 className={big || fullscreen ? 'mb-6 text-4xl font-bold leading-snug text-ink' : 'text-h3 mb-4'}>
                   {activeExhibit.title}
                 </h2>
