@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>광고 생성 기능 — 발표 QA·테스트 자료</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap top-inn">
+    <div class="eyebrow">ClickMe · 광고 생성(4-3) · 발표 QA 준비</div>
+    <h1 class="title">광고 생성 기능 QA &amp; 테스트 자료</h1>
+    <p class="lede">발표장 질의응답에서 광고 생성 기능을 방어하기 위한 자료 세트입니다. 각 문서는 <b>핵심 논지 → 근거 코드 → 예상 질문·답변 → 실측 수치 → 정정 주의</b> 순으로 구성돼, 질문이 오면 바로 펼쳐 답할 수 있습니다.</p>
+
+    <div class="metrics">
+      <div class="metric"><div class="v">0%</div><div class="l">한글 카피 오타율 (구조적 보장)</div></div>
+      <div class="metric"><div class="v">86.0%</div><div class="l">라벨 정확율 · gemini-3-pro (사람검수)</div></div>
+      <div class="metric"><div class="v">~53%</div><div class="l">텍스트 토큰 절감 (QA LLM→규칙)</div></div>
+      <div class="metric"><div class="v">66.7→88.9%</div><div class="l">QA 통과율 · create→improve</div></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section>
+    <h2 class="sec"><span class="k">01–05</span> 문서 목록</h2>
+    <p class="sec-lead">주제별 5개 문서 + 이 인덱스. 발표 전 한 번 훑고, QA에서 관련 문서를 열어 두세요.</p>
+    <div class="doc-grid">
+      <a class="doc" href="01-generation-overview.html">
+        <span class="n">01</span>
+        <h3>생성 기능 자체</h3>
+        <p>결정론 LangGraph 5노드 + 시안 3종 병렬 + 규칙 QA 순위. 아키텍처·파이프라인·전략.</p>
+      </a>
+      <a class="doc" href="02-chat-integration.html">
+        <span class="n">02</span>
+        <h3>채팅 ↔ 생성 연결</h3>
+        <p>ask_generator(조언)와 run_generation(실행)의 구분, 4분기 라우팅, 위젯·SSE·[생성결과] 콜백.</p>
+      </a>
+      <a class="doc" href="03-testing.html">
+        <span class="n">03</span>
+        <h3>테스트 자료</h3>
+        <p>테스트 인벤토리(18모듈·84테스트)와 수동 QA 시나리오. 소스 미커밋 리스크 명시.</p>
+      </a>
+      <a class="doc" href="04-image-quality.html">
+        <span class="n">04</span>
+        <h3>이미지 품질</h3>
+        <p>무결점 이미지 비율로 측정. gemini 86% vs openai 19.8%(사람검수), 비용 매트릭스.</p>
+      </a>
+      <a class="doc" href="05-typo-reduction.html">
+        <span class="n">05</span>
+        <h3>오타율 감소</h3>
+        <p>PIL 직접 렌더로 한글 카피 오타 구조적 0%. 카피 vs 라벨 구분, VLM 판정법.</p>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec"><span class="k">TIP</span> 이 자료를 QA에서 쓰는 법</h2>
+    <div class="card">
+      <p><strong>① 한 줄 논지부터.</strong> 각 문서 상단의 강조 문장이 그 기능의 핵심 방어선입니다. 질문이 오면 논지 → 메커니즘 → 근거 순으로 답하세요.</p>
+      <p><strong>② 예상 질문은 접힌 상태입니다.</strong> Q 항목을 클릭하면 답변이 펼쳐집니다. 발표 전 예상 질문을 미리 열어 답을 소리 내어 연습해 두면 좋습니다.</p>
+      <p><strong>③ 헷갈리기 쉬운 정정 사실을 특히 챙기세요.</strong> 순위는 gpt-4o 비전이 아니라 규칙 QA, ask_generator는 실행이 아니라 조언, "$0.02/회"는 텍스트 토큰만 — 이런 구분을 정확히 답하면 신뢰도가 크게 오릅니다.</p>
+    </div>
+    <div class="callout info">
+      <span class="t">범위</span>
+      이 자료는 <b>광고 생성(generator) 도메인</b>에 한정합니다. 시뮬레이션 SSR·PDF 보고서 등은 다른 도메인 소관이니 QA에서 생성 기능과 섞지 마세요(PDF는 chat 도메인, 순위 채점 VLM은 측정 스크립트 전용).
+    </div>
+  </section>
+
+  <div class="footer">
+    근거: 코드베이스(<code>backend/domain/generator</code>, <code>backend/scripts/measure</code>)와 <code>docs/generator/</code> 문서 조사 기준. 수치는 <code>RESULTS.md</code>·<code>비용-매트릭스-결과.md</code>·<code>발표-용어집-생성기능.md</code>에서 인용했습니다.
+  </div>
+</main>
+
+<script>
+  // 저장된 테마 토글 없음 — OS 설정을 따르되, data-theme가 있으면 우선
+</script>
+</body>
+</html>
