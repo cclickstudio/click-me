@@ -79,8 +79,9 @@ def _reaction_fallback_enabled() -> bool:
 def _ssr_scoring_enabled() -> bool:
     """SSR 점수화 사용 여부 — 기본 OFF(LLM 정수 유지). SIMULATION_SCORING=ssr이면 켠다.
 
-    임베딩 앵커 판별력 부족(코사인 유사도 폭 0.1 이하)으로 분산이 뭉개지고 극성이 뒤집히는
-    문제가 실측 확인됨(P08: LLM trust=2 → SSR trust=4). 앵커 재설계(softmax+발화체) 전까지 봉인.
+    봉인 사유였던 앵커 판별력 부족·극성 역전(P08: LLM trust=2 → SSR trust=4)은 앵커 v2.0
+    재설계(발화체·레벨당 복수 문장·softmax τ=0.07·large 임베딩)로 해소 — 강도 5단계 대조
+    세트에서 trust 1.27→4.41 단조 회복 확인(2026-07-13). 기본 ON 전환은 별도 팀 합의 후.
     """
     return os.environ.get("SIMULATION_SCORING", "llm").lower() == "ssr"
 
