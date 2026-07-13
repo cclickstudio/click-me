@@ -6,7 +6,6 @@
 import {
   AlertTriangle,
   Server,
-  Sparkles,
   Users,
   BarChart3,
   MessageSquare,
@@ -17,6 +16,8 @@ import {
   ArrowUp,
 } from 'lucide-react';
 import { Pipeline, LayerStack, Matrix, Timeline, InfoCards, StatusRow, BarDistribution, StepBox, ShotGrid, type Tone } from './primitives';
+// 제너레이터 도메인은 별도 모듈로 분리해 관리한다(질문 목록 + 시각 자료).
+import { GENERATOR_DOMAIN, GENERATOR_EXHIBITS } from './exhibits-generator';
 
 export type Exhibit = { title: string; note: string; render: () => React.ReactNode };
 
@@ -295,214 +296,8 @@ export const EXHIBITS: Record<string, Exhibit> = {
     ),
   },
 
-  // ── 제너레이터 ──────────────────────────────────────────────
-  'gen-korean-typo': {
-    title: '이미지 속 한글 깨짐 — 실사례',
-    note: '문제: AI가 이미지에 직접 쓴 한글 라벨이 깨짐.',
-    render: () => (
-      <StatusRow
-        items={[
-          { label: '광고 카피는 AI가 아닌 PIL로 직접 합성', state: 'success', detail: '오타율 0%' },
-          { label: '광고 라벨 이미지 모델 전환', state: 'success', detail: 'OpenAI → Gemini, 오타율 89% 감소·비용 유지' },
-        ]}
-      />
-    ),
-  },
-  'gen-langsmith-gap': {
-    title: 'LangSmith 비용 관측 공백 — 미해결',
-    note: 'PPT에도 결과가 비어 있던 항목 — 아직 해결 진행 중이라고 정직하게 답할 것.',
-    render: () => (
-      <StatusRow
-        items={[
-          { label: 'LangSmith가 비용의 85%를 관측하지 못함', state: 'danger', detail: '자동 추적은 LangChain/LangGraph로 도는 텍스트 LLM 한정' },
-          { label: '이미지 생성 등 텍스트 LLM 밖 API 비용은 놓침', state: 'muted', detail: '해결 방안 진행 중(결과 미확정)' },
-        ]}
-      />
-    ),
-  },
-  'gen-flow': {
-    title: '시안 생성 흐름',
-    note: '',
-    render: () => (
-      <Pipeline
-        steps={[
-          { label: '요구사항 입력', tone: 'neutral' },
-          { label: '시안 3종 자동 생성', tone: 'warning' },
-          { label: 'QA 기반 순위', tone: 'warning' },
-        ]}
-      />
-    ),
-  },
-  'gen-diversity': {
-    title: '시안 3종의 다양성 보장',
-    note: '',
-    render: () => (
-      <StatusRow
-        items={[
-          { label: '전략 3계열을 프롬프트로 강제', state: 'warning', detail: '템플릿 A·C 계열 각 1개 + FOMO(B) 반드시 포함' },
-          { label: 'LLM 호출이 통째로 실패해도', state: 'success', detail: '기본 3종(BENEFIT·FOMO·SOCIAL_PROOF)으로 보강' },
-        ]}
-      />
-    ),
-  },
-  'gen-gemini-copy': {
-    title: 'Gemini 모드에서도 카피는 텍스트 LLM 전담',
-    note: '',
-    render: () => (
-      <Timeline
-        events={[
-          { date: '이전', label: '이미지 모델이 카피까지 생성', detail: '카피가 약 80% 확률로 통째 누락되는 버그 발견', tone: 'muted' },
-          { date: '이후', label: '카피는 항상 gpt-4.1 텍스트 LLM', detail: '이미지 모델이 준 카피는 버림', tone: 'success' },
-        ]}
-      />
-    ),
-  },
-  'gen-retry': {
-    title: '이미지 생성 실패 시 재시도',
-    note: '',
-    render: () => (
-      <Pipeline
-        steps={[
-          { label: '동시 요청 1개로 직렬화', tone: 'neutral' },
-          { label: '503·429·이미지 누락 감지', tone: 'warning' },
-          { label: '백오프 재시도(최대 3회)', tone: 'success' },
-        ]}
-      />
-    ),
-  },
-  'gen-ranking-basis': {
-    title: '시안 순위는 클릭률 예측이 아니다',
-    note: '',
-    render: () => (
-      <StatusRow
-        items={[
-          { label: '예측 CTR 환산 아님', state: 'muted', detail: '이미지 모델은 카피 품질만 평가' },
-          { label: 'QA 규칙 점수 기반 상대 순위', state: 'neutral' },
-        ]}
-      />
-    ),
-  },
-  'gen-qa-honest': {
-    title: '품질검증 7항목 중 3개만 실검증',
-    note: '정직한 한계 — 팀도 문서에 이미 명시해둔 상태.',
-    render: () => (
-      <StatusRow
-        items={[
-          { label: '실제 규칙 기반 검증', state: 'success', detail: '글자 수 · CTA 존재 · 중복 여부 3항목' },
-          { label: '항상 통과 처리(스텁)', state: 'muted', detail: '오타·가독성·타겟적합성·브랜드일관성 4항목' },
-        ]}
-      />
-    ),
-  },
-  'gen-banned-words': {
-    title: '과대광고 표현 필터',
-    note: '',
-    render: () => (
-      <InfoCards
-        items={[{ label: '금칙 표현', value: '15개', detail: '100%·보장·기적·완치·즉시효과·넘버원·최고·완벽·1위 등', tone: 'warning' }]}
-      />
-    ),
-  },
-  'gen-improve-redesign': {
-    title: '개선 모드는 기존 이미지를 직접 고치지 않는다',
-    note: '',
-    render: () => (
-      <Timeline
-        events={[
-          { date: '초기 설계', label: '기존 광고 이미지 직접 수정', detail: '텍스트 이중노출 문제로 폐기', tone: 'muted' },
-          { date: '현재', label: '시뮬 피드백 기반 신규 생성', detail: '기존 이미지는 텍스트 힌트로만 사용(픽셀 로드 안 함)', tone: 'success' },
-        ]}
-      />
-    ),
-  },
-  'gen-cutout-fallback': {
-    title: '상품 이미지(누끼) 3단계 폴백',
-    note: '',
-    render: () => (
-      <Pipeline
-        steps={[
-          { label: '요청에 담긴 누끼 직접 로드', tone: 'success' },
-          { label: '같은 생성 건의 키 재구성', tone: 'warning' },
-          { label: '즉석 배경 제거 후 검증', detail: '불투명도·연결성분 기준 통과해야 채택', tone: 'muted' },
-        ]}
-      />
-    ),
-  },
-  'gen-chat-cutout-gap': {
-    title: '채팅 경로는 아직 누끼 재사용 불가',
-    note: '',
-    render: () => (
-      <StatusRow items={[{ label: '채팅에서 개선모드 진입 시', state: 'muted', detail: 'Simulation↔Generation DB 미연결로 누끼 추적 불가, null 폴백으로 생성' }]} />
-    ),
-  },
-  'gen-loop-limit': {
-    title: '자동 개선 루프의 한계값',
-    note: '',
-    render: () => (
-      <InfoCards
-        items={[
-          { label: '목표 품질 점수', value: '0.8', tone: 'warning' },
-          { label: '최대 반복 · 타임아웃', value: '3회 · 600초', tone: 'warning' },
-        ]}
-      />
-    ),
-  },
-  'gen-loop-axis': {
-    title: '개선 루프가 "무엇을 고칠지" 정하는 기준',
-    note: '',
-    render: () => (
-      <StatusRow
-        items={[
-          { label: '4개 KPI 축 비교', state: 'neutral', detail: '클릭의향·구매의도·신뢰도·거부율' },
-          { label: '목표 대비 가장 못 미치는 1축 선정', state: 'warning', detail: '그 축의 개선 패턴을 반복마다 고정 주입' },
-        ]}
-      />
-    ),
-  },
-  'gen-font': {
-    title: '한글 폰트 처리',
-    note: '',
-    render: () => (
-      <StatusRow
-        items={[
-          { label: 'Pretendard, CDN 런타임 로드', state: 'neutral', detail: '저장소에 내장하지 않고 다운로드해 캐시' },
-          { label: '다운로드 실패 시', state: 'muted', detail: '보유 웨이트 중 가장 가까운 것으로 자동 폴백' },
-        ]}
-      />
-    ),
-  },
-  'gen-contrast-bug': {
-    title: '밝은 브랜드 컬러에서 버튼 글씨가 안 보이던 문제',
-    note: '',
-    render: () => (
-      <StatusRow
-        items={[
-          { label: '파스텔·연회색 브랜드 컬러', state: 'danger', detail: '텍스트/배경 대비가 거의 없어 실측으로 확인됨' },
-          { label: '휘도 임계값 기준 보정', state: 'success', detail: '강조색-검정 혼합으로 최소 대비 보장' },
-        ]}
-      />
-    ),
-  },
-  'gen-inpaint-cost': {
-    title: '인페인팅은 항상 켜짐 — 비용 트레이드오프 인지',
-    note: '',
-    render: () => (
-      <StatusRow items={[{ label: '변종 1개당 이미지 API 2회 호출', state: 'warning', detail: '배경 생성 + 인페인팅, 비용 상승을 인지한 확정 결정' }]} />
-    ),
-  },
-  'gen-restart': {
-    title: '서버 재시작 시 진행 중이던 생성 작업',
-    note: '',
-    render: () => (
-      <StatusRow
-        items={[
-          { label: '인프로세스 방식', state: 'muted', detail: '프로세스가 죽으면 pending에 고정' },
-          { label: '30분 주기 정체 감지', state: 'neutral', detail: '관측만(자동 정정은 안 함)' },
-          { label: '24시간 주기 품질 다이제스트', state: 'neutral' },
-        ]}
-      />
-    ),
-  },
+  // ── 제너레이터 (exhibits-generator.tsx에서 관리) ──────────────
+  ...GENERATOR_EXHIBITS,
 
   // ── 시뮬레이션 ──────────────────────────────────────────────
   'sim-ssr-flat': {
@@ -1471,32 +1266,7 @@ export const DOMAINS: Domain[] = [
       { id: 't13', q: '관리자가 조직·회원을 삭제하면 데이터가 완전히 사라지나요?', exhibitKey: 'infra-admin-delete' },
     ],
   },
-  {
-    id: 'generator',
-    label: '제너레이터',
-    accent: 'warning',
-    icon: <Sparkles size={16} strokeWidth={1.8} />,
-    questions: [
-      { id: 'g1', q: 'AI가 만든 광고 이미지에 한글이 깨진다는 문제가 있었다던데, 어떻게 해결했나요?', exhibitKey: 'gen-korean-typo' },
-      { id: 'g2', q: 'LangSmith로 비용을 추적한다면서 85%를 못 본다는 게 무슨 말인가요?', exhibitKey: 'gen-langsmith-gap' },
-      { id: 'g3', q: '시안 3종은 어떤 흐름으로 만들어지나요?', exhibitKey: 'gen-flow' },
-      { id: 'g4', q: '시안 3종이 서로 안 겹치게(다양성) 어떻게 보장하나요?', exhibitKey: 'gen-diversity' },
-      { id: 'g5', q: 'Gemini로 이미지를 만들 때 문구도 Gemini가 쓰나요?', exhibitKey: 'gen-gemini-copy' },
-      { id: 'g6', q: '이미지 생성 API가 실패하거나 느려지면 어떻게 되나요?', exhibitKey: 'gen-retry' },
-      { id: 'g7', q: '시안 순위는 클릭률 예측을 기반으로 매기나요?', exhibitKey: 'gen-ranking-basis' },
-      { id: 'g8', q: '품질검증 항목을 전부 실제로 검사하나요?', exhibitKey: 'gen-qa-honest' },
-      { id: 'g9', q: "'1위', '100% 효과' 같은 과대광고 표현은 걸러지나요?", exhibitKey: 'gen-banned-words' },
-      { id: 'g10', q: '개선 모드는 기존 광고 이미지를 직접 고치는 건가요?', exhibitKey: 'gen-improve-redesign' },
-      { id: 'g11', q: '상품 이미지(누끼)를 못 찾으면 어떻게 하나요?', exhibitKey: 'gen-cutout-fallback' },
-      { id: 'g12', q: '채팅에서 개선모드로 들어가면 아까 만든 누끼를 재사용하나요?', exhibitKey: 'gen-chat-cutout-gap' },
-      { id: 'g13', q: '자동 개선 루프는 몇 번까지 반복되나요?', exhibitKey: 'gen-loop-limit' },
-      { id: 'g14', q: '어떤 지표가 부족하면 뭘 고칠지는 어떻게 정하나요?', exhibitKey: 'gen-loop-axis' },
-      { id: 'g15', q: '한글 폰트는 어떻게 처리하나요? 라이선스 문제는 없나요?', exhibitKey: 'gen-font' },
-      { id: 'g16', q: '브랜드 컬러가 밝으면 버튼 글씨가 안 보이는 문제 없었나요?', exhibitKey: 'gen-contrast-bug' },
-      { id: 'g17', q: '인페인팅을 항상 켜두면 비용이 2배 아닌가요?', exhibitKey: 'gen-inpaint-cost' },
-      { id: 'g18', q: '서버가 재시작되면 생성 중이던 작업은 어떻게 되나요?', exhibitKey: 'gen-restart' },
-    ],
-  },
+  GENERATOR_DOMAIN,
   {
     id: 'simulation',
     label: '시뮬레이션',

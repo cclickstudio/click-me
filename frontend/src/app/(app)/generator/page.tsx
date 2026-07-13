@@ -1999,6 +1999,31 @@ export default function GeneratorPage() {
           </div>
         </div>
 
+        {/* 폰트 라이선스 고지 — 생성 이미지의 카피는 Pretendard로 렌더된다. OFL은 고지를 요구한다. */}
+        <footer className="mt-8 border-t border-line pt-4">
+          <p className="text-[11px] leading-relaxed text-ink-muted">
+            생성된 광고 이미지의 문구는{" "}
+            <a
+              href="https://github.com/orioncactus/pretendard"
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-ink-secondary"
+            >
+              Pretendard
+            </a>{" "}
+            글꼴로 렌더링됩니다. Pretendard는{" "}
+            <a
+              href="https://openfontlicense.org"
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-ink-secondary"
+            >
+              SIL Open Font License 1.1
+            </a>{" "}
+            에 따라 배포되며, 상업적 이용이 허용됩니다. © 길형진(orioncactus)
+          </p>
+        </footer>
+
         {modalCandidate && detail && (
           <CandidateModal
             generationId={detail.generation_id}
