@@ -18,11 +18,25 @@ const QUESTION_NO: Record<string, number> = Object.fromEntries(
   DOMAINS.flatMap((d) => d.questions.map((q, i) => [q.id, i + 1])),
 );
 
+// 초기 화면(질문 미선택)의 빈 여백을 채우는 실제 집행 스크린샷 — 매니지먼트 19번(mgmt-live-execution)과
+// 같은 원본을 채널별(페북/인스타) 묶음으로 배치한다(좋아요 알림 컷은 제외).
+const IDLE_SHOT_GROUPS = [
+  [
+    { src: '/appendix/fb-page.png', caption: 'Facebook 페이지 — 광고비피해자' },
+    { src: '/appendix/fb-insights.png', caption: 'Facebook 프로페셔널 대시보드 인사이트' },
+  ],
+  [
+    { src: '/appendix/ig-profile.png', caption: 'Instagram — @cclick_me 프로필' },
+    { src: '/appendix/ig-insights.png', caption: 'Instagram 계정 인사이트' },
+  ],
+];
+
 export default function AppendixPage() {
   const { theme, toggle } = useTheme();
   const [density, setDensity] = useState<Density>('presentation');
   const [query, setQuery] = useState('');
-  const [openDomain, setOpenDomain] = useState<string | null>(DOMAINS[0].id);
+  // 첫 진입은 폴더 전부 닫힘 — 질문 미선택 상태의 실집행 스크린샷 화면이 먼저 보이게 한다.
+  const [openDomain, setOpenDomain] = useState<string | null>(null);
   const [selectedByDomain, setSelectedByDomain] = useState<Record<string, string>>(() =>
     Object.fromEntries(DOMAINS.map((d) => [d.id, d.questions[0].id])),
   );
@@ -77,8 +91,8 @@ export default function AppendixPage() {
   }, []);
 
   return (
-    <div className={big ? 'mx-auto w-[90%] py-10' : 'mx-auto max-w-6xl px-6 py-8'}>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div className={big ? 'mx-auto w-[90%] py-4' : 'mx-auto max-w-6xl px-6 py-8'}>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className={big ? 'text-4xl font-bold tracking-tight text-ink sm:text-5xl' : 'text-h1'}>발표 Q&A 부록</h1>
           <p className={big ? 'mt-2 text-lg text-ink-secondary' : 'text-body mt-1'}>
@@ -113,9 +127,9 @@ export default function AppendixPage() {
       </div>
 
       {/* 포털사이트 스타일 대형 검색창 */}
-      <div className="relative mb-8">
+      <div className="relative mb-5">
         <Search
-          size={big ? 26 : 20}
+          size={big ? 22 : 20}
           strokeWidth={1.8}
           className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-tertiary ${big ? 'left-6' : 'left-5'}`}
         />
@@ -124,7 +138,7 @@ export default function AppendixPage() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="궁금한 키워드로 바로 찾기 — SSR, HITL, Meta API, DDD..."
           className={`w-full rounded-full border-2 border-line bg-card text-ink placeholder:text-ink-muted shadow-sm transition-colors focus:border-primary focus:outline-none focus-visible:ring-4 focus-visible:ring-ring/20 ${
-            big ? 'py-5 pl-16 pr-6 text-2xl' : 'py-3 pl-12 pr-5 text-base'
+            big ? 'py-3 pl-14 pr-6 text-lg' : 'py-3 pl-12 pr-5 text-base'
           }`}
         />
       </div>
@@ -259,8 +273,19 @@ export default function AppendixPage() {
               </div>
             </div>
           ) : (
-            <div className="rounded-2xl border-2 border-line bg-card p-10 text-center text-ink-tertiary">
-              왼쪽에서 폴더를 열고 질문을 선택하세요.
+            <div className="rounded-2xl border-2 border-line bg-card p-4">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {IDLE_SHOT_GROUPS.map((group) => (
+                  <div key={group[0].src} className="space-y-4">
+                    {group.map((sh) => (
+                      <div key={sh.src} className="overflow-hidden rounded-lg border border-line">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={sh.src} alt={sh.caption} className="block w-full" />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
