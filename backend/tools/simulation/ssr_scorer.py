@@ -5,13 +5,13 @@ import numpy as np
 from openai import AsyncOpenAI
 
 from core.schemas import ScoreDistribution
-from tools.simulation.anchors import ANCHOR_STATEMENTS, EMBEDDING_MODEL, SCORE_RANGES
+from tools.simulation.anchors import ANCHOR_STATEMENTS, EMBEDDING_MODEL, SCORE_RANGES, SOFTMAX_TAU
 
 
 class SSRScorer:
     """
     Semantic Similarity Rating (SSR) scorer.
-    Exposure + Deliberation text → embeddings → cosine similarity with anchor statements → score distribution.
+    반응 서술 텍스트 → 임베딩 → 앵커(레벨당 복수 문장 평균)와 코사인 유사도 → softmax 분포.
     Deterministic: same input → same output. No LLM calls — embedding API only.
     Must call precompute_anchors() once at server startup.
     """
@@ -22,27 +22,33 @@ class SSRScorer:
         self._anchor_embeddings: dict[str, np.ndarray] = {}
 
     async def precompute_anchors(self) -> None:
+        # 레벨당 복수 문장(v2.0) — 문장 전부를 한 번에 임베딩한 뒤 레벨별 평균을 앵커로 쓴다.
         all_anchors: list[str] = []
         index_map: list[tuple[str, int]] = []
-        for dim, anchors in ANCHOR_STATEMENTS.items():
-            for i, anchor in enumerate(anchors):
-                all_anchors.append(anchor)
-                index_map.append((dim, i))
+        for dim, levels in ANCHOR_STATEMENTS.items():
+            for i, level in enumerate(levels):
+                for anchor in level:
+                    all_anchors.append(anchor)
+                    index_map.append((dim, i))
 
-        by_dim: dict[str, list[list[float]]] = {d: [] for d in ANCHOR_STATEMENTS}
+        by_level: dict[tuple[str, int], list[list[float]]] = {}
         if self.use_mock:
             embeddings = self._mock_embeddings(all_anchors)
-            for (dim, _), embedding in zip(index_map, embeddings, strict=False):
-                by_dim[dim].append(embedding)
+            for key, embedding in zip(index_map, embeddings, strict=False):
+                by_level.setdefault(key, []).append(embedding)
         else:
             if self.client is None:
                 raise RuntimeError("SSR scorer OpenAI client is not initialized.")
             response = await self.client.embeddings.create(model=EMBEDDING_MODEL, input=all_anchors)
-            for (dim, _), emb_obj in zip(index_map, response.data, strict=False):
-                by_dim[dim].append(emb_obj.embedding)
+            for key, emb_obj in zip(index_map, response.data, strict=False):
+                by_level.setdefault(key, []).append(emb_obj.embedding)
 
-        for dim, emb_list in by_dim.items():
-            self._anchor_embeddings[dim] = np.array(emb_list, dtype=np.float32)
+        for dim, levels in ANCHOR_STATEMENTS.items():
+            level_means = [
+                np.array(by_level[(dim, i)], dtype=np.float32).mean(axis=0)
+                for i in range(len(levels))
+            ]
+            self._anchor_embeddings[dim] = np.array(level_means, dtype=np.float32)
 
     async def score(self, exposure_text: str) -> dict[str, ScoreDistribution]:
         if not self._anchor_embeddings:
@@ -66,8 +72,10 @@ class SSRScorer:
             response_norm = float(np.linalg.norm(response_emb))
             cosine_sims = (anchor_embs @ response_emb) / (anchor_norms * response_norm + 1e-9)
 
-            shifted = cosine_sims - cosine_sims.min()
-            probs = shifted / (shifted.sum() + 1e-9)
+            # softmax 온도 정규화(v2.0) — 구 min-shift는 유사도 미세 차이를 뭉개
+            # 분산 뭉개짐·극성 역전을 일으켰다(P08). τ는 anchors.SOFTMAX_TAU.
+            exp = np.exp((cosine_sims - cosine_sims.max()) / SOFTMAX_TAU)
+            probs = exp / (exp.sum() + 1e-9)
 
             lo, hi = SCORE_RANGES[dim]
             levels = np.linspace(lo, hi, len(probs))
