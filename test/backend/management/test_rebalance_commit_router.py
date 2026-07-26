@@ -1,12 +1,13 @@
 # /budget/rebalance-commit 라우터 — drift 409·이동량 검증·원자 제안 빌드 확인
 """양쪽 캠페인 drift와 이동량 정합을 검증하고 REBALANCE_BUDGET 제안 1건을 집행하는지 본다."""
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from api.routers import management
@@ -202,6 +203,93 @@ def test_rebalance_commit_surfaces_indeterminate_guidance(env, monkeypatch):
     body = res.json()
     assert body.get("indeterminate") is True
     assert "확인" in body["error_message"]  # 재시도 유도가 아닌 상태 확인 안내
+
+
+async def test_rebalance_commit_serializes_overlapping_campaigns(monkeypatch):
+    """같은 캠페인을 공유하는 동시 커밋 — 한쪽만 성공하고 총예산 불변이 지켜져야 한다.
+
+    검증(read)→집행(write) 구간이 직렬화되지 않으면 두 요청 모두 낡은 예산으로
+    드리프트 검증을 통과해, from 감액은 절대값 세팅으로 1회만 반영되고 증액은
+    양쪽 모두 반영돼 총액이 부푼다(A: X→Y, B: X→Z).
+    """
+    org_id = uuid.uuid4()
+
+    class _YieldingReader:
+        """검증 read마다 이벤트 루프를 양보해 두 요청의 인터리빙을 결정적으로 재현."""
+
+        def __init__(self):
+            self.budgets = {"camp_x": 100_000, "camp_y": 50_000, "camp_z": 50_000}
+
+        async def list_campaigns(self, include_archived=False):
+            await asyncio.sleep(0)
+            return [
+                SimpleNamespace(campaign_id=cid, daily_budget_krw=b)
+                for cid, b in self.budgets.items()
+            ]
+
+    reader = _YieldingReader()
+
+    class _WritingExecutor:
+        """집행을 fake 플랫폼 상태(reader.budgets) 절대값 세팅으로 반영."""
+
+        async def execute(self, action, proposal):
+            em = proposal.evidence_metrics
+            from_id, to_id = proposal.target_object_ids
+            await asyncio.sleep(0)
+            reader.budgets[from_id] = int(em["from_after_krw"])
+            reader.budgets[to_id] = int(em["to_after_krw"])
+            return ActionResult(
+                result_id=f"r_{to_id}",
+                approval_id=action.approval_id,
+                status=ResultStatus.SUCCESS,
+                executed_at=datetime.now(UTC),
+                idempotency_key=f"k_{to_id}",
+            )
+
+    async def fake_require_reader(db, org):
+        return reader
+
+    async def fake_require_owned(db, org, campaign_id):
+        return None
+
+    async def fake_require_ad_account(db, org):
+        return "act_test"
+
+    async def fake_require_writer(db, org):
+        return object()
+
+    monkeypatch.setattr(management.settings, "use_mock", False, raising=False)
+    monkeypatch.setattr(management.settings, "management_execution_mode", "dry_run", raising=False)
+    monkeypatch.setattr(management, "_require_reader", fake_require_reader)
+    monkeypatch.setattr(management, "_require_owned_campaign", fake_require_owned)
+    monkeypatch.setattr(management, "_require_ad_account", fake_require_ad_account)
+    monkeypatch.setattr(management, "_require_writer", fake_require_writer)
+    monkeypatch.setattr(management, "_get_executor", lambda writer=None: _WritingExecutor())
+
+    def _body(to_campaign: str) -> management.RebalanceCommitRequest:
+        return management.RebalanceCommitRequest(
+            from_campaign_id="camp_x",
+            to_campaign_id=to_campaign,
+            from_after_krw=80_000,
+            to_after_krw=70_000,
+            move_krw=20_000,
+            shown_from_before_krw=100_000,
+            shown_to_before_krw=50_000,
+        )
+
+    user = SimpleNamespace(id=uuid.uuid4())
+    results = await asyncio.gather(
+        management.budget_rebalance_commit(_body("camp_y"), user=user, db=_FakeDB(org_id)),
+        management.budget_rebalance_commit(_body("camp_z"), user=user, db=_FakeDB(org_id)),
+        return_exceptions=True,
+    )
+
+    successes = [r for r in results if isinstance(r, dict)]
+    rejected = [r for r in results if isinstance(r, HTTPException)]
+    assert len(successes) == 1, f"동시 커밋 중 하나만 성공해야 함 — results={results}"
+    assert len(rejected) == 1 and rejected[0].status_code == 409
+    # 총액 불변 — 낡은 검증으로 증액이 이중 반영되면 220,000으로 부푼다.
+    assert sum(reader.budgets.values()) == 200_000
 
 
 def test_rebalance_commit_surfaces_compensation_failed_guidance(env, monkeypatch):

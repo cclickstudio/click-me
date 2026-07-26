@@ -1,7 +1,8 @@
 """Task2 — LIVE 실행 모드 게이팅.
 
-실 게재 단계 진입(§7 갱신) — LIVE 봉인 해제. DEFAULT_ALLOWED_MODES에 LIVE 포함.
-실집행은 use_mock=False + management_execution_mode=live 명시 opt-in일 때만 일어난다.
+실 게재 단계 진입(§7 갱신) — LIVE는 DEFAULT_ALLOWED_MODES에 기본 불포함.
+실집행은 use_mock=False + management_execution_mode=live 명시 opt-in(게이트가 LIVE를
+append)일 때만 일어난다.
 """
 
 from __future__ import annotations
@@ -11,9 +12,9 @@ from domain.management.contracts.enums import ExecutionMode
 from domain.management.execution.executor import DEFAULT_ALLOWED_MODES
 
 
-def test_default_allowed_modes_allows_live():
-    # 실 게재 단계 — LIVE 봉인 해제. opt-in(use_mock=False+mode=live)일 때 실집행.
-    assert ExecutionMode.LIVE in DEFAULT_ALLOWED_MODES
+def test_default_allowed_modes_excludes_live():
+    # LIVE는 기본 불허 — opt-in(_get_executor·wiring)에서만 명시 append로 통과.
+    assert ExecutionMode.LIVE not in DEFAULT_ALLOWED_MODES
 
 
 def test_resolved_mode_mock_when_use_mock(monkeypatch):

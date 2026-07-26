@@ -12,6 +12,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from random import Random
@@ -89,6 +90,7 @@ from domain.management.contracts.policy import (
     CPM_ANCHOR_KRW,
     CPM_NORMAL_RANGE_KRW,
     DAILY_BUDGET_KRW,
+    DEFAULT_MONTHLY_TARGET_KRW,
     FATIGUE_FREQUENCY,
     PROPOSAL_TTL_MINUTES,
     exec_gate_thresholds,
@@ -128,6 +130,7 @@ from domain.management.execution.tier import (
     BudgetAuthority,
     TenantBudgetRegistry,
 )
+from domain.management.history_link import build_history_recorder
 from domain.management.naming import suggest_campaign_names
 from domain.management.target_check import is_target_missed
 from domain.management.wiring import (
@@ -139,6 +142,8 @@ from domain.management.wiring import (
     build_prediction_reader,
     build_reader,
     build_writer,
+    resolve_execution_mode,
+    state_version_v1,
 )
 from tools.storage.s3 import download_bytes
 
@@ -182,7 +187,7 @@ _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
 # 예산(중소기업 월 마케팅 500만 중 광고비·성장기업 광고비 100만+), 아이보스(매출의 5~15%).
 # policy.DAILY_BUDGET_KRW(100_000)와 정합 — 일 10만 × 30일 = 300만.
 _AUDIT_LOG = build_audit_sink(settings)
-_BUDGET = TenantBudgetRegistry(default_limit_krw=3_000_000)
+_BUDGET = TenantBudgetRegistry(default_limit_krw=DEFAULT_MONTHLY_TARGET_KRW)
 _executor: Executor | None = None
 _APPROVAL_STORE = build_approval_store(settings)  # 승인 원장 — 발행(/approve)과 executor가 공유
 
@@ -240,23 +245,13 @@ async def _request_writer(
     return await _require_writer(db, await _require_org_id(user, db))
 
 
-async def _state_version(_ad_account_id: str) -> str:
-    return "state_v1"  # 데모 고정 — 제안의 expected_state_version과 일치
-
-
 def _resolved_execution_mode() -> ExecutionMode:
-    """settings 기반 실행 모드 — use_mock이면 무조건 MOCK(봉인).
+    """실행 모드 — 정본은 wiring.resolve_execution_mode(use_mock이면 MOCK 봉인).
 
-    실모드(use_mock=False)에서만 management_execution_mode(dry_run|validate_only|live)를 따른다.
-    LIVE는 여기를 통해서만 들어오고, 호출부는 /approve 단일 경로(AUTO 자율 승인은 안 거침).
+    LIVE 분기는 /approve와 사용자 명시 실행 엔드포인트(활성화·중지·예산 변경 등)에서
+    이 함수로 판정한다(AUTO 자율 승인은 안 거침).
     """
-    if getattr(settings, "use_mock", True):
-        return ExecutionMode.MOCK
-    raw = getattr(settings, "management_execution_mode", "dry_run")
-    try:
-        return ExecutionMode(raw)
-    except ValueError:
-        return ExecutionMode.DRY_RUN
+    return resolve_execution_mode(settings)
 
 
 def _is_sending_mode() -> bool:
@@ -281,10 +276,11 @@ def _get_executor(writer=None) -> Executor:
             idempotency=build_idempotency_store(settings),
             audit=_AUDIT_LOG,
             budget_for=_BUDGET.for_tenant,
-            state_version_provider=_state_version,
+            state_version_provider=state_version_v1,
             current_policy_version=APPROVAL_POLICY_VERSION,
             allowed_modes=allowed,
             approvals=_APPROVAL_STORE,
+            history_recorder=build_history_recorder(),  # 실행 확정 → 롱텀 메모리 기록
         )
     if _executor is None:
         _executor = Executor(
@@ -292,10 +288,11 @@ def _get_executor(writer=None) -> Executor:
             idempotency=build_idempotency_store(settings),
             audit=_AUDIT_LOG,
             budget_for=_BUDGET.for_tenant,
-            state_version_provider=_state_version,
+            state_version_provider=state_version_v1,
             current_policy_version=APPROVAL_POLICY_VERSION,
             allowed_modes=allowed,
             approvals=_APPROVAL_STORE,
+            history_recorder=build_history_recorder(),  # 실행 확정 → 롱텀 메모리 기록
         )
     return _executor
 
@@ -320,7 +317,7 @@ def _demo_executor() -> Executor:
             idempotency=InMemoryIdempotencyStore(),
             audit=_AUDIT_LOG,
             budget_for=_BUDGET.for_tenant,
-            state_version_provider=_state_version,
+            state_version_provider=state_version_v1,
             current_policy_version=APPROVAL_POLICY_VERSION,
             # LIVE는 시연 경로에 불필요 — 승인이 MOCK로 고정되고 writer도 DRY_RUN이라 이중 봉인.
             allowed_modes=DEFAULT_ALLOWED_MODES,
@@ -423,14 +420,26 @@ async def anomaly_scan(
             "anomalies": [],
             "note": exc.user_msg or exc.message,
         }
+    # 캠페인별 지표를 계정 단위 level=campaign 배치로 선취(전체 누적 + 진행 중 최근 7일) —
+    # 캠페인마다 get_metrics를 순차 호출하던 N+1을 최대 2콜 병렬로 대체. 진단(LLM)만 캠페인별.
+    ids = [c.campaign_id for c in infos]
+    active_ids = [c.campaign_id for c in infos if c.state == CampaignState.ACTIVE]
+    tasks: list[Awaitable[Any]] = [reader.get_metrics_by_campaign(ids, now)]
+    if active_ids:
+        tasks.append(reader.get_metrics_by_campaign(active_ids, now, date_preset="last_7d"))
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    metrics_map = results[0] if isinstance(results[0], dict) else {}
+    week_map = results[1] if len(results) > 1 and isinstance(results[1], dict) else {}
     anomalies: list[dict] = []
     for c in infos:
-        try:
-            m = await reader.get_metrics(c.campaign_id, now)
-            summary = _real_summary(m, c.daily_budget_krw, conversion_value_krw, target_roas)
-            dx = await _campaign_diagnosis(reader, c.campaign_id, summary, m.as_of)
-        except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체 스캔을 막지 않게
-            dx = None
+        m = metrics_map.get(c.campaign_id)
+        dx = None
+        if m is not None:
+            try:
+                summary = _real_summary(m, c.daily_budget_krw, conversion_value_krw, target_roas)
+                dx = await _campaign_diagnosis(reader, c.campaign_id, summary, m.as_of)
+            except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체 스캔을 막지 않게
+                dx = None
         if dx:  # 진단이 나온(=이상 있는) 캠페인만
             anomalies.append(
                 {
@@ -443,11 +452,8 @@ async def anomaly_scan(
         # 빈도 피로 — 진행 중 캠페인의 최근 7일 빈도가 임계(3.0+, 문서 §4.6)를 넘으면
         # 소재 교체를 제안한다(성과 진단과 별개 신호 — 실측 배선, 데모 주입 아님).
         if c.state == CampaignState.ACTIVE:
-            try:
-                wk = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
-                freq = wk.frequency or 0.0
-            except Exception:  # noqa: BLE001 — 피로 신호 실패는 조용히 건너뜀
-                freq = 0.0
+            wk = week_map.get(c.campaign_id)
+            freq = (wk.frequency or 0.0) if wk is not None else 0.0
             if freq >= FATIGUE_FREQUENCY:
                 anomalies.append(
                     {
@@ -1765,7 +1771,10 @@ async def _get_campaign_real(
     """
     today = _today_utc()
     # 보관/삭제 캠페인 상세도 열 수 있게 archived 포함 조회(상세는 by-id라 데이터는 그대로 조회됨).
-    campaigns = await reader.list_campaigns(include_archived=True)
+    try:
+        campaigns = await reader.list_campaigns(include_archived=True)
+    except MetaApiError as exc:  # 데모 중 Meta 장애 → raw 500 대신 명확한 HTTP로 변환
+        raise _campaign_meta_error(exc, campaign_id) from exc
     info = next((c for c in campaigns if c.campaign_id == campaign_id), None)
     if info is None:
         raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
@@ -2269,6 +2278,8 @@ async def create_campaign_proposal(
             status_code=422,
             detail=f"{body.objective} 캠페인의 최소 일예산은 ₩{min_budget:,}입니다 (Meta 정책).",
         )
+    if body.daily_budget_krw > _MAX_DAILY_BUDGET_KRW:
+        raise HTTPException(422, f"일예산은 {_MAX_DAILY_BUDGET_KRW:,}원을 넘을 수 없어요.")
     # 시뮬 연결 키 — 형식·org 소유 검증(방어 심층, 읽기 시점 대조와 이중).
     if body.simulation_id is not None:
         try:
@@ -2411,6 +2422,8 @@ async def from_candidate(
     min_budget = min_daily_budget_for(body.objective, policy)
     if body.daily_budget_krw < min_budget:
         raise HTTPException(status_code=422, detail=f"최소 일예산은 ₩{min_budget:,}입니다.")
+    if body.daily_budget_krw > _MAX_DAILY_BUDGET_KRW:
+        raise HTTPException(422, f"일예산은 {_MAX_DAILY_BUDGET_KRW:,}원을 넘을 수 없어요.")
 
     now = datetime.now(UTC)
     ad_account = await _require_ad_account(db, org_id)
@@ -2769,6 +2782,8 @@ async def from_simulation(
     min_budget = min_daily_budget_for("traffic", policy)
     if body.daily_budget_krw < min_budget:
         raise HTTPException(status_code=422, detail=f"최소 일예산은 ₩{min_budget:,}입니다.")
+    if body.daily_budget_krw > _MAX_DAILY_BUDGET_KRW:
+        raise HTTPException(422, f"일예산은 {_MAX_DAILY_BUDGET_KRW:,}원을 넘을 수 없어요.")
 
     now = datetime.now(UTC)
     ad_account = await _require_ad_account(db, org_id)
@@ -3137,7 +3152,7 @@ async def activate_campaign(
     if _resolved_execution_mode() is ExecutionMode.LIVE:
         from api.routers.billing import get_billing_service  # noqa: PLC0415 — 순환 방지
 
-        credit_balance = await get_billing_service().balance(body.org_id)
+        credit_balance = await get_billing_service().balance(str(org_id))
         if credit_balance < commit:
             return {
                 "serving": False,
@@ -3235,7 +3250,13 @@ async def activate_campaign(
     action = await issue_approval(
         proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
     )
-    result = await _get_executor().execute(action, proposal)
+    # org 연결 writer 주입 — 실 모드는 전역 토큰이 아닌 로그인 org writer로 집행(크로스테넌트 방지).
+    executor = (
+        _get_executor()
+        if getattr(settings, "use_mock", True)
+        else _get_executor(await _require_writer(db, org_id))
+    )
+    result = await executor.execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     serving = status == "success"
     if serving and row is not None:
@@ -3260,7 +3281,10 @@ async def activate_campaign(
 @router.get("/campaigns/{campaign_id}/delivery-status")
 async def delivery_status(campaign_id: str, reader=Depends(_request_reader)):
     """게재 여부 + 불가 원인 + Meta 선불 잔액 — 대시보드/게재 화면이 원인을 그대로 표시."""
-    detail = await reader.get_delivery_status_detail(campaign_id)
+    try:
+        detail = await reader.get_delivery_status_detail(campaign_id)
+    except MetaApiError as exc:  # 데모 중 Meta 장애 → raw 500 대신 명확한 HTTP로 변환
+        raise _campaign_meta_error(exc, campaign_id) from exc
     try:
         funding = await reader.get_account_funding()
     except Exception:  # noqa: BLE001 — 자금 조회 실패가 상태 표시를 막지 않게
@@ -3295,7 +3319,11 @@ async def sync_campaign(
     org_id = str(org_uuid)
     reader = await _require_reader(db, org_uuid)
     billing = get_billing_service()
-    metrics = await reader.get_metrics(campaign_id, datetime.now(UTC))
+    # 차감 전에 감싼다 — 여기서 실패해야 크레딧 차감 없이 안전하게 중단(이중차감 방지).
+    try:
+        metrics = await reader.get_metrics(campaign_id, datetime.now(UTC))
+    except MetaApiError as exc:  # 데모 중 Meta 장애 → raw 500 대신 명확한 HTTP로 변환
+        raise _campaign_meta_error(exc, campaign_id) from exc
     spent = max(0, metrics.spend_krw or 0)
     already = await billing.spent_for(org_id, campaign_id)
     charged = 0
@@ -3309,7 +3337,11 @@ async def sync_campaign(
                 await _emit_impersonation_audit(user, org_uuid, action="sync_credit_adjust")
             except BillingError:
                 charged = 0
-    detail = await reader.get_delivery_status_detail(campaign_id)
+    # 차감 이후라 이미 크레딧이 빠졌다 — 상세 조회 실패는 502로 명확히(재차감 없음).
+    try:
+        detail = await reader.get_delivery_status_detail(campaign_id)
+    except MetaApiError as exc:
+        raise _campaign_meta_error(exc, campaign_id) from exc
     ended = (detail.effective_status or "").upper() not in ("ACTIVE", "PENDING_REVIEW")
     row = await _created_campaign_row(db, campaign_id)
     if row is not None:
@@ -3376,7 +3408,13 @@ async def pause_campaign(
     action = await issue_approval(
         proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
     )
-    result = await _get_executor().execute(action, proposal)
+    # org 연결 writer 주입 — 실 모드는 전역 토큰이 아닌 로그인 org writer로 집행(크로스테넌트 방지).
+    executor = (
+        _get_executor()
+        if getattr(settings, "use_mock", True)
+        else _get_executor(await _require_writer(db, org_id))
+    )
+    result = await executor.execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     if status == "success":
         try:
@@ -3538,29 +3576,31 @@ async def budget_commit(
     org_id = await _require_org_id_write(user, db, action="budget_commit")
     await _require_owned_campaign(db, org_id, campaign_id)
     reader = await _require_reader(db, org_id)
-    before, declared = await _validate_budget_change(
-        reader, campaign_id, body, reject_shown_drift=True
-    )
-    new = body.new_daily_budget_krw
-    ad_account = await _require_ad_account(db, org_id)
-    proposal = _build_budget_proposal(
-        tenant_id=str(org_id),
-        ad_account_id=ad_account,
-        campaign_id=campaign_id,
-        action_type=declared,
-        budget_before_krw=before,
-        new_daily_budget_krw=new,
-    )
-    action = await issue_approval(
-        proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
-    )
-    is_demo = proposal.tenant_id == TENANT_ID
-    executor = (
-        _get_executor()
-        if is_demo or getattr(settings, "use_mock", True)
-        else _get_executor(await _require_writer(db, org_id))
-    )
-    result = await executor.execute(action, proposal)
+    # rebalance-commit과 같은 락 맵 — 단일 조정과 리밸런스가 같은 캠페인에서 교차해도 직렬화.
+    async with _campaign_budget_guard(campaign_id):
+        before, declared = await _validate_budget_change(
+            reader, campaign_id, body, reject_shown_drift=True
+        )
+        new = body.new_daily_budget_krw
+        ad_account = await _require_ad_account(db, org_id)
+        proposal = _build_budget_proposal(
+            tenant_id=str(org_id),
+            ad_account_id=ad_account,
+            campaign_id=campaign_id,
+            action_type=declared,
+            budget_before_krw=before,
+            new_daily_budget_krw=new,
+        )
+        action = await issue_approval(
+            proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
+        )
+        is_demo = proposal.tenant_id == TENANT_ID
+        executor = (
+            _get_executor()
+            if is_demo or getattr(settings, "use_mock", True)
+            else _get_executor(await _require_writer(db, org_id))
+        )
+        result = await executor.execute(action, proposal)
     response: dict[str, object] = {
         "result": result.model_dump(mode="json"),
         "budget_before_krw": before,
@@ -3575,6 +3615,29 @@ async def budget_commit(
         if msg:
             response["error_message"] = str(msg)
     return response
+
+
+# 캠페인 예산 write 직렬화 — 드리프트 검증(read)과 집행(write) 사이에 다른 요청이 끼어들면
+# 둘 다 낡은 예산으로 검증을 통과해 총액 불변이 깨진다(예: X→Y·X→Z 동시 리밸런스 커밋).
+# 단일 프로세스(모놀리식 EC2) 전제의 인프로세스 락 — 멀티 프로세스 확장 시 pg advisory lock 필요.
+_CAMPAIGN_BUDGET_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+@asynccontextmanager
+async def _campaign_budget_guard(*campaign_ids: str) -> AsyncIterator[None]:
+    """캠페인별 락을 정렬 순서로 획득 — 교차 요청(X→Y vs Y→X) 데드락 방지."""
+    locks = [
+        _CAMPAIGN_BUDGET_LOCKS.setdefault(cid, asyncio.Lock()) for cid in sorted(set(campaign_ids))
+    ]
+    acquired: list[asyncio.Lock] = []
+    try:
+        for lock in locks:
+            await lock.acquire()
+            acquired.append(lock)
+        yield
+    finally:
+        for lock in reversed(acquired):
+            lock.release()
 
 
 class RebalanceCommitRequest(BaseModel):
@@ -3673,25 +3736,26 @@ async def budget_rebalance_commit(
     await _require_owned_campaign(db, org_id, body.from_campaign_id)
     await _require_owned_campaign(db, org_id, body.to_campaign_id)
     reader = await _require_reader(db, org_id)
-    from_before, to_before = await _validate_rebalance_change(reader, body)
-    ad_account = await _require_ad_account(db, org_id)
-    proposal = _build_rebalance_proposal(
-        tenant_id=str(org_id),
-        ad_account_id=ad_account,
-        body=body,
-        from_before=from_before,
-        to_before=to_before,
-    )
-    action = await issue_approval(
-        proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
-    )
-    is_demo = proposal.tenant_id == TENANT_ID
-    executor = (
-        _get_executor()
-        if is_demo or getattr(settings, "use_mock", True)
-        else _get_executor(await _require_writer(db, org_id))
-    )
-    result = await executor.execute(action, proposal)
+    async with _campaign_budget_guard(body.from_campaign_id, body.to_campaign_id):
+        from_before, to_before = await _validate_rebalance_change(reader, body)
+        ad_account = await _require_ad_account(db, org_id)
+        proposal = _build_rebalance_proposal(
+            tenant_id=str(org_id),
+            ad_account_id=ad_account,
+            body=body,
+            from_before=from_before,
+            to_before=to_before,
+        )
+        action = await issue_approval(
+            proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
+        )
+        is_demo = proposal.tenant_id == TENANT_ID
+        executor = (
+            _get_executor()
+            if is_demo or getattr(settings, "use_mock", True)
+            else _get_executor(await _require_writer(db, org_id))
+        )
+        result = await executor.execute(action, proposal)
     response: dict[str, object] = {"result": result.model_dump(mode="json")}
     response["from_before_krw"] = from_before
     response["to_before_krw"] = to_before
@@ -3821,42 +3885,48 @@ async def _budget_status_live(reader, budget_key: str = TENANT_ID) -> dict:
     days_in_month = calendar.monthrange(now.year, now.month)[1]
     target = _BUDGET.for_tenant(budget_key).limit_krw  # 월 목표(미설정 0) — org별 인메모리
 
-    # 이번 달 실소진(계정 단위 1콜) + 일자별 곡선
-    try:
-        spent = await reader.get_account_spend("this_month")
-    except Exception:  # noqa: BLE001 — 조회 실패면 0
-        spent = 0
-    try:
-        daily = await reader.get_account_daily_spend("this_month")
-    except Exception:  # noqa: BLE001
-        daily = []
-    # 여력 — Meta 선불 가용 잔액 + 충전 한도(spend_cap, 부가세 제외 집행가능액)·누적 지출.
-    # 충전 한도 − 누적 지출 = 잔액으로 정합 표시(충전 한도는 결제액의 부가세 제외분).
-    try:
-        _funding = await reader.get_account_funding()
-        account_balance = _funding.available_balance_krw or 0
-        account_spend_cap = _funding.spend_cap_krw or 0
-        account_amount_spent = _funding.amount_spent_krw or 0
-    except Exception:  # noqa: BLE001
+    # 서로 독립인 계정 단위 Meta 읽기(이달 소진·일자곡선·자금)와 캠페인 목록을 병렬로 —
+    # 각 왕복이 1~3초라 순차 await면 그대로 직렬 누적된다(성과: 콜드 로드 단축).
+    # 여력 = Meta 선불 가용 잔액 + 충전 한도(spend_cap, 부가세 제외 집행가능액)·누적 지출.
+    spent_r, daily_r, funding_r, infos_r = await asyncio.gather(
+        reader.get_account_spend("this_month"),
+        reader.get_account_daily_spend("this_month"),
+        reader.get_account_funding(),
+        reader.list_campaigns(),
+        return_exceptions=True,
+    )
+    spent = spent_r if not isinstance(spent_r, Exception) else 0
+    daily = daily_r if not isinstance(daily_r, Exception) else []
+    if isinstance(funding_r, Exception):
         account_balance = account_spend_cap = account_amount_spent = 0
+    else:
+        account_balance = funding_r.available_balance_krw or 0
+        account_spend_cap = funding_r.spend_cap_krw or 0
+        account_amount_spent = funding_r.amount_spent_krw or 0
+    infos = infos_r if not isinstance(infos_r, Exception) else []
     # ClickMe 크레딧 — 집행 한도(spend 권한)·잔액. 월 목표(관제)·Meta 선불(실광고비)과 별개 개념.
+    # DB 조회라 Meta 왕복과 무관(병목 아님) — 별도 유지.
     try:
         _billing = get_billing_service()
         credit_charged = await _billing.total_charged(DEMO_ORG_ID)
         credit_balance = await _billing.balance(DEMO_ORG_ID)
     except Exception:  # noqa: BLE001 — 빌링 조회 실패면 0
         credit_charged = credit_balance = 0
-    # 캠페인별 이번 달 소진 + ROAS
+    # 캠페인별 이번 달 소진 + ROAS — 계정 단위 level=campaign 1콜(배치)로 N+1 제거
+    # (캠페인마다 get_metrics를 순차 호출하던 것을 대체 — _list_campaigns_real과 동일 패턴).
     campaigns: list[dict] = []
-    try:
-        for c in await reader.list_campaigns():
-            try:
-                m = await reader.get_metrics(c.campaign_id, now, date_preset="this_month")
+    if infos:
+        ids = [c.campaign_id for c in infos]
+        try:
+            mmap = await reader.get_metrics_by_campaign(ids, now, date_preset="this_month")
+        except Exception:  # noqa: BLE001 — 배치 실패면 전 캠페인 0(권한 거부 등 균일 실패)
+            mmap = {}
+        for c in infos:
+            m = mmap.get(c.campaign_id)
+            if m is not None:
                 campaigns.append({"name": c.name, "spend_krw": m.spend_krw or 0, "roas": m.roas})
-            except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체를 막지 않게
+            else:
                 campaigns.append({"name": c.name, "spend_krw": 0, "roas": None})
-    except Exception:  # noqa: BLE001
-        campaigns = []
 
     # 런레이트 예측 — 현재 페이스로 월말 예상 소진.
     projection = round(spent / now.day * days_in_month) if now.day and spent else spent
