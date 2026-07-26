@@ -420,14 +420,26 @@ async def anomaly_scan(
             "anomalies": [],
             "note": exc.user_msg or exc.message,
         }
+    # 캠페인별 지표를 계정 단위 level=campaign 배치로 선취(전체 누적 + 진행 중 최근 7일) —
+    # 캠페인마다 get_metrics를 순차 호출하던 N+1을 최대 2콜 병렬로 대체. 진단(LLM)만 캠페인별.
+    ids = [c.campaign_id for c in infos]
+    active_ids = [c.campaign_id for c in infos if c.state == CampaignState.ACTIVE]
+    tasks: list[Awaitable[Any]] = [reader.get_metrics_by_campaign(ids, now)]
+    if active_ids:
+        tasks.append(reader.get_metrics_by_campaign(active_ids, now, date_preset="last_7d"))
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    metrics_map = results[0] if isinstance(results[0], dict) else {}
+    week_map = results[1] if len(results) > 1 and isinstance(results[1], dict) else {}
     anomalies: list[dict] = []
     for c in infos:
-        try:
-            m = await reader.get_metrics(c.campaign_id, now)
-            summary = _real_summary(m, c.daily_budget_krw, conversion_value_krw, target_roas)
-            dx = await _campaign_diagnosis(reader, c.campaign_id, summary, m.as_of)
-        except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체 스캔을 막지 않게
-            dx = None
+        m = metrics_map.get(c.campaign_id)
+        dx = None
+        if m is not None:
+            try:
+                summary = _real_summary(m, c.daily_budget_krw, conversion_value_krw, target_roas)
+                dx = await _campaign_diagnosis(reader, c.campaign_id, summary, m.as_of)
+            except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체 스캔을 막지 않게
+                dx = None
         if dx:  # 진단이 나온(=이상 있는) 캠페인만
             anomalies.append(
                 {
@@ -440,11 +452,8 @@ async def anomaly_scan(
         # 빈도 피로 — 진행 중 캠페인의 최근 7일 빈도가 임계(3.0+, 문서 §4.6)를 넘으면
         # 소재 교체를 제안한다(성과 진단과 별개 신호 — 실측 배선, 데모 주입 아님).
         if c.state == CampaignState.ACTIVE:
-            try:
-                wk = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
-                freq = wk.frequency or 0.0
-            except Exception:  # noqa: BLE001 — 피로 신호 실패는 조용히 건너뜀
-                freq = 0.0
+            wk = week_map.get(c.campaign_id)
+            freq = (wk.frequency or 0.0) if wk is not None else 0.0
             if freq >= FATIGUE_FREQUENCY:
                 anomalies.append(
                     {
@@ -3876,42 +3885,48 @@ async def _budget_status_live(reader, budget_key: str = TENANT_ID) -> dict:
     days_in_month = calendar.monthrange(now.year, now.month)[1]
     target = _BUDGET.for_tenant(budget_key).limit_krw  # 월 목표(미설정 0) — org별 인메모리
 
-    # 이번 달 실소진(계정 단위 1콜) + 일자별 곡선
-    try:
-        spent = await reader.get_account_spend("this_month")
-    except Exception:  # noqa: BLE001 — 조회 실패면 0
-        spent = 0
-    try:
-        daily = await reader.get_account_daily_spend("this_month")
-    except Exception:  # noqa: BLE001
-        daily = []
-    # 여력 — Meta 선불 가용 잔액 + 충전 한도(spend_cap, 부가세 제외 집행가능액)·누적 지출.
-    # 충전 한도 − 누적 지출 = 잔액으로 정합 표시(충전 한도는 결제액의 부가세 제외분).
-    try:
-        _funding = await reader.get_account_funding()
-        account_balance = _funding.available_balance_krw or 0
-        account_spend_cap = _funding.spend_cap_krw or 0
-        account_amount_spent = _funding.amount_spent_krw or 0
-    except Exception:  # noqa: BLE001
+    # 서로 독립인 계정 단위 Meta 읽기(이달 소진·일자곡선·자금)와 캠페인 목록을 병렬로 —
+    # 각 왕복이 1~3초라 순차 await면 그대로 직렬 누적된다(성과: 콜드 로드 단축).
+    # 여력 = Meta 선불 가용 잔액 + 충전 한도(spend_cap, 부가세 제외 집행가능액)·누적 지출.
+    spent_r, daily_r, funding_r, infos_r = await asyncio.gather(
+        reader.get_account_spend("this_month"),
+        reader.get_account_daily_spend("this_month"),
+        reader.get_account_funding(),
+        reader.list_campaigns(),
+        return_exceptions=True,
+    )
+    spent = spent_r if not isinstance(spent_r, Exception) else 0
+    daily = daily_r if not isinstance(daily_r, Exception) else []
+    if isinstance(funding_r, Exception):
         account_balance = account_spend_cap = account_amount_spent = 0
+    else:
+        account_balance = funding_r.available_balance_krw or 0
+        account_spend_cap = funding_r.spend_cap_krw or 0
+        account_amount_spent = funding_r.amount_spent_krw or 0
+    infos = infos_r if not isinstance(infos_r, Exception) else []
     # ClickMe 크레딧 — 집행 한도(spend 권한)·잔액. 월 목표(관제)·Meta 선불(실광고비)과 별개 개념.
+    # DB 조회라 Meta 왕복과 무관(병목 아님) — 별도 유지.
     try:
         _billing = get_billing_service()
         credit_charged = await _billing.total_charged(DEMO_ORG_ID)
         credit_balance = await _billing.balance(DEMO_ORG_ID)
     except Exception:  # noqa: BLE001 — 빌링 조회 실패면 0
         credit_charged = credit_balance = 0
-    # 캠페인별 이번 달 소진 + ROAS
+    # 캠페인별 이번 달 소진 + ROAS — 계정 단위 level=campaign 1콜(배치)로 N+1 제거
+    # (캠페인마다 get_metrics를 순차 호출하던 것을 대체 — _list_campaigns_real과 동일 패턴).
     campaigns: list[dict] = []
-    try:
-        for c in await reader.list_campaigns():
-            try:
-                m = await reader.get_metrics(c.campaign_id, now, date_preset="this_month")
+    if infos:
+        ids = [c.campaign_id for c in infos]
+        try:
+            mmap = await reader.get_metrics_by_campaign(ids, now, date_preset="this_month")
+        except Exception:  # noqa: BLE001 — 배치 실패면 전 캠페인 0(권한 거부 등 균일 실패)
+            mmap = {}
+        for c in infos:
+            m = mmap.get(c.campaign_id)
+            if m is not None:
                 campaigns.append({"name": c.name, "spend_krw": m.spend_krw or 0, "roas": m.roas})
-            except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체를 막지 않게
+            else:
                 campaigns.append({"name": c.name, "spend_krw": 0, "roas": None})
-    except Exception:  # noqa: BLE001
-        campaigns = []
 
     # 런레이트 예측 — 현재 페이스로 월말 예상 소진.
     projection = round(spent / now.day * days_in_month) if now.day and spent else spent
