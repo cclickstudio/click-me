@@ -10,10 +10,13 @@ raw httpx로 Graph API를 직접 호출한다(신규 SDK 의존성 0). 테스트
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger("clickme")
 
 #: Meta GET 응답 단기 캐시 — 대시보드·예산·비교 탭이 같은 list_campaigns/insights/funding을
 #: 반복 호출하는 fan-out을 합쳐 요청 한도(rate limit, code 17 등)를 아낀다. 쓰기 시 무효화.
@@ -126,12 +129,30 @@ class MetaClient:
             key = self._cache_key(path, params)
             hit = _GET_CACHE.get(key)
             if hit and hit[0] > time.monotonic():
+                # 관측 시임(DEBUG) — 캐시 히트는 왕복 0ms. 실 네트워크만 로깅(테스트 노이즈 방지).
+                if self._transport is None:
+                    logger.debug(
+                        '{"event": "meta.timing", "path": "%s", "ms": 0, "cache": "hit"}', path
+                    )
                 return hit[1]
         # access_token 기본 주입 → 호출자 params가 덮어쓸 수 있음(앱 토큰 등 ⑤ 토큰검증).
         query = {"access_token": self._token, **params}
-        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
-            res = await client.get(f"{self._base}/{path}", params=query)
-            payload = self._handle(res)
+        # 관측 시임(DEBUG) — 이 Meta GET 왕복 하나의 소요(ms)를 남긴다. log_level=DEBUG로 켜면
+        # 페이지 로드마다 "호출 몇 개 × 각 몇 ms × 캐시 히트 여부"가 드러나 N+1 진단에 쓴다.
+        started = time.monotonic()
+        try:
+            async with httpx.AsyncClient(
+                timeout=self._timeout, transport=self._transport
+            ) as client:
+                res = await client.get(f"{self._base}/{path}", params=query)
+                payload = self._handle(res)
+        finally:
+            if self._transport is None:
+                logger.debug(
+                    '{"event": "meta.timing", "path": "%s", "ms": %d, "cache": "miss"}',
+                    path,
+                    round((time.monotonic() - started) * 1000),
+                )
         if cacheable:
             _GET_CACHE[key] = (time.monotonic() + _GET_CACHE_TTL, payload)
         return payload
