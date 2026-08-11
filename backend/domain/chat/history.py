@@ -120,7 +120,13 @@ async def list_sessions(db: AsyncSession, project_id: str | None) -> list[dict]:
 
 
 async def list_sessions_for_org(
-    db: AsyncSession, org_id: str | uuid.UUID, project_id: str | uuid.UUID | None = None
+    db: AsyncSession,
+    org_id: str | uuid.UUID,
+    project_id: str | uuid.UUID | None = None,
+    *,
+    user_id: str | uuid.UUID | None = None,
+    team_id: str | uuid.UUID | None = None,
+    restrict_user_projects: bool = False,
 ) -> list[dict]:
     """org 전체 프로젝트의 세션 통합 목록 — 센터 채팅의 "전체 프로젝트" 표시용(스펙 §6).
 
@@ -152,6 +158,17 @@ async def list_sessions_for_org(
         .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
         .where(Project.organization_id == org)
     )
+    if restrict_user_projects:
+        uid = _as_uuid(user_id)
+        tid = _as_uuid(team_id)
+        # USER 프로젝트 접근 정책과 동일하게 제한한다.
+        # 팀 프로젝트는 같은 팀만, 팀 미배정 프로젝트는 생성자 본인만 볼 수 있다.
+        if uid is None:
+            return []
+        own_unassigned = and_(Project.team_id.is_(None), Project.created_by == uid)
+        stmt = stmt.where(
+            or_(Project.team_id == tid, own_unassigned) if tid is not None else own_unassigned
+        )
     pid = _as_uuid(project_id)
     if pid is not None:
         stmt = stmt.where(ChatSession.project_id == pid)

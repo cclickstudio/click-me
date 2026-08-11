@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.access import assert_project_access
 from core.auth import get_current_user, require_user_org
 from core.center_suggestions import (
     dismiss_suggestion,
@@ -127,7 +128,17 @@ async def center_sessions(
         return {"sessions": [], "org_selected": False}
     from domain.chat import history  # noqa: PLC0415
 
-    sessions = await history.list_sessions_for_org(db, org, project_id=project_id)
+    role = (getattr(user, "role", "") or "").upper()
+    if project_id:
+        await assert_project_access(db, project_id, user)
+    sessions = await history.list_sessions_for_org(
+        db,
+        org,
+        project_id=project_id,
+        user_id=user.id if role == "USER" else None,
+        team_id=getattr(user, "team_id", None) if role == "USER" else None,
+        restrict_user_projects=role == "USER",
+    )
     return {"sessions": sessions, "org_selected": True}
 
 
